@@ -16,7 +16,12 @@ from app.services import balance as balance_svc
 from app.services import conversation as conv_svc
 from app.services import usage as usage_svc
 from app.services import users as users_svc
-from app.services.cost_estimator import Estimate, compute_charge, estimate
+from app.services.cost_estimator import (
+    Estimate,
+    compute_charge,
+    count_tokens,
+    estimate,
+)
 from app.services.openai_gateway import OpenAIError, chat as openai_chat
 from app.services.settings_store import get_economics
 
@@ -54,10 +59,12 @@ class TurnEstimate:
 
 
 async def estimate_turn(
-    db: AsyncSession, user: User, mode: AIMode, text: str
+    db: AsyncSession, user: User, mode: AIMode, text: str,
+    *, file_text: str | None = None,
 ) -> TurnEstimate:
     econ = await get_economics(db)
-    est: Estimate = estimate(mode, text, econ)
+    context_tokens = count_tokens(file_text) if file_text else 0
+    est: Estimate = estimate(mode, text, econ, context_tokens=context_tokens)
     bal = await users_svc.get_balance(db, user.id)
     return TurnEstimate(
         mode_code=mode.code,
@@ -90,6 +97,8 @@ async def run_turn(
     conv_id: str | None = None,
     cap: int | None = None,
     skip_balance_gate: bool = False,
+    file_text: str | None = None,
+    file_name: str | None = None,
 ) -> TurnResult:
     """Execute one full chat turn. `cap` is the user-confirmed upper bound."""
     econ = await get_economics(db)
@@ -99,7 +108,8 @@ async def run_turn(
         return TurnResult(ok=False, error="expired", balance=bal.remaining)
 
     if not skip_balance_gate and not user.unrestricted_usage:
-        est = estimate(mode, text, econ)
+        context_tokens = count_tokens(file_text) if file_text else 0
+        est = estimate(mode, text, econ, context_tokens=context_tokens)
         if bal.remaining < est.estimated_ai_tokens_min:
             return TurnResult(
                 ok=False, error="insufficient",
@@ -114,7 +124,9 @@ async def run_turn(
     elif conv.current_mode != mode.code:
         conv.current_mode = mode.code
 
-    messages = await conv_svc.build_messages(db, conv, mode, text)
+    messages = await conv_svc.build_messages(
+        db, conv, mode, text, file_text=file_text, file_name=file_name
+    )
 
     try:
         result = await openai_chat(db, mode, messages)

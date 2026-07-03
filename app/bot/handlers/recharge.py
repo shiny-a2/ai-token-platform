@@ -108,13 +108,36 @@ async def on_receipt_txid(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     pkg_id = data.get("package_id")
     txid = message.text.strip()
+    checking = await message.answer(
+        "🔎 در حال استعلام خودکار تراکنش…" if lang == "fa" else "🔎 Verifying transaction…"
+    )
     async with SessionLocal() as db:
         user = await users_svc.get_or_create(db, message.from_user.id)
         package = await db.get(Package, pkg_id) if pkg_id else None
         receipt = await pay_svc.create_receipt(
             db, user_id=user.id, package=package, txid=txid, method="crypto"
         )
+        status, result = await pay_svc.process_txid_receipt(db, receipt, package)
         user_disp = f"{user.first_name or ''} ({user.telegram_user_id})"
+        added = package.ai_tokens if package else 0
     await state.clear()
-    await message.answer(t(lang, "receipt_received"))
-    await _notify_admins(message, user_disp, package, receipt.id, None)
+
+    if status == "approved":
+        await checking.edit_text(
+            t(lang, "receipt_approved_user", tokens=added)
+            + (f"\n({result.network} — {result.amount_usd:.2f}$)" if result else "")
+        )
+        note = (f"✅ رسید خودکار تایید شد\nکاربر: {user_disp}\n"
+                f"پکیج: {package.name if package else '—'}\n"
+                f"{result.network} — {result.amount_usd:.2f}$" if result else "")
+        for admin_id in settings.admin_ids:
+            try:
+                await message.bot.send_message(admin_id, note)
+            except Exception:  # noqa: BLE001
+                pass
+    else:
+        extra = ""
+        if result and result.note:
+            extra = ("\nنتیجه استعلام: " + result.note) if lang == "fa" else ""
+        await checking.edit_text(t(lang, "receipt_received") + extra)
+        await _notify_admins(message, user_disp, package, receipt.id, None)

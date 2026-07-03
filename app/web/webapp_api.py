@@ -196,6 +196,66 @@ async def chat_messages(
     }
 
 
+# ---------------- chat: file attach ----------------
+ALLOWED_UPLOAD_EXT = {".pdf", ".txt", ".csv", ".md", ".json", ".log"}
+MAX_UPLOAD_MB = 15
+
+
+@router.post("/chat/upload")
+async def chat_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    wu: WebAppUser = Depends(webapp_user),
+    db: AsyncSession = Depends(get_session),
+):
+    from app.services.cost_estimator import count_tokens
+    from app.services.file_extract import extract_text
+
+    _rate_limit(wu.telegram_id, "upload", limit=10, window_s=600)
+    user = await _db_user(db, wu)
+    name = (file.filename or "").lower()
+    ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+    if ext not in ALLOWED_UPLOAD_EXT:
+        raise HTTPException(422, "file_type_not_allowed")
+
+    buf = bytearray()
+    limit = MAX_UPLOAD_MB * 1024 * 1024
+    while chunk := await file.read(64 * 1024):
+        buf.extend(chunk)
+        if len(buf) > limit:
+            raise HTTPException(413, "file_too_large")
+    raw = bytes(buf)
+
+    fname = f"{new_uuid()}{ext}"
+    path = STORAGE_DIR / fname
+    path.write_bytes(raw)
+    text = extract_text(path, file.filename or fname)
+    if not text:
+        path.unlink(missing_ok=True)
+        raise HTTPException(422, "extraction_failed")
+
+    fa = FileAsset(
+        user_id=user.id, original_filename=file.filename, mime_type=file.content_type,
+        size_bytes=len(raw), storage_path=str(path), kind="document",
+        status="stored", extracted_text=text,
+    )
+    db.add(fa)
+    await db.commit()
+    await db.refresh(fa)
+    return {"file_id": fa.id, "name": file.filename, "tokens": count_tokens(text)}
+
+
+async def _file_context(
+    db: AsyncSession, user: User, file_id: str | None
+) -> tuple[str | None, str | None]:
+    if not file_id:
+        return None, None
+    fa = await db.get(FileAsset, file_id)
+    if fa is None or fa.user_id != user.id or not fa.extracted_text:
+        return None, None
+    return fa.extracted_text, fa.original_filename
+
+
 # ---------------- chat: estimate + send ----------------
 class EstimateBody(BaseModel):
     text: str
@@ -203,6 +263,7 @@ class EstimateBody(BaseModel):
     conv_id: str | None = None
     size: str = "1024x1024"
     quality: str = "medium"
+    file_id: str | None = None
 
 
 @router.post("/chat/estimate")
@@ -231,7 +292,9 @@ async def chat_estimate(
             "confirm": not user.unrestricted_usage, "balance": bal.remaining,
         }
 
-    est = await chat_service.estimate_turn(db, user, mode, body.text)
+    file_text, _ = await _file_context(db, user, body.file_id)
+    est = await chat_service.estimate_turn(db, user, mode, body.text,
+                                           file_text=file_text)
     return {
         "in_tokens": est.in_tokens,
         "min": est.min_credits,
@@ -248,6 +311,7 @@ class SendBody(BaseModel):
     cap: int | None = None
     size: str = "1024x1024"
     quality: str = "medium"
+    file_id: str | None = None
 
 
 @router.post("/chat/send")
@@ -268,11 +332,14 @@ async def chat_send(
 
     # SECURITY: never trust a client-supplied cap — derive the confirmed
     # upper bound server-side from our own estimate (body.cap is ignored).
-    est = await chat_service.estimate_turn(db, user, mode, body.text.strip())
+    file_text, file_name = await _file_context(db, user, body.file_id)
+    est = await chat_service.estimate_turn(db, user, mode, body.text.strip(),
+                                           file_text=file_text)
     server_cap = None if user.unrestricted_usage else est.max_credits
 
     result = await chat_service.run_turn(
         db, user, mode, body.text.strip(), conv_id=body.conv_id, cap=server_cap,
+        file_text=file_text, file_name=file_name,
     )
     if not result.ok:
         return {
@@ -489,8 +556,27 @@ async def submit_receipt(
         receipt.receipt_file_id = file_asset_id
         await db.commit()
 
+    # TxID present -> try automatic on-chain verification (auto-approve on match)
+    if txid.strip():
+        status, result = await pay_svc.process_txid_receipt(db, receipt, package)
+        if status == "approved":
+            bot = getattr(request.app.state, "bot", None)
+            if bot:
+                info = (f"✅ رسید خودکار تایید شد\n"
+                        f"کاربر: {user.first_name or ''} ({user.telegram_user_id})\n"
+                        f"پکیج: {package.name}\n"
+                        f"{result.network} — {result.amount_usd:.2f}$" if result else "")
+                for admin_id in settings.admin_ids:
+                    try:
+                        await bot.send_message(admin_id, info)
+                    except Exception:  # noqa: BLE001
+                        pass
+            return {"ok": True, "receipt_id": receipt.id, "auto_approved": True,
+                    "added": package.ai_tokens,
+                    "network": result.network if result else ""}
+
     await _notify_admins_receipt(request, user, package, receipt.id, photo_bytes)
-    return {"ok": True, "receipt_id": receipt.id}
+    return {"ok": True, "receipt_id": receipt.id, "auto_approved": False}
 
 
 # ---------------- settings / support ----------------
@@ -515,6 +601,43 @@ async def save_settings(
     await db.commit()
     return {"ok": True, "language": user.language,
             "unrestricted": user.unrestricted_usage}
+
+
+class ExportBody(BaseModel):
+    text: str
+    filename: str = "پاسخ.md"
+
+
+@router.post("/export")
+async def export_to_telegram(
+    body: ExportBody, request: Request, wu: WebAppUser = Depends(webapp_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Deliver content as a file into the user's own Telegram chat with the bot."""
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(422, "empty_text")
+    if len(text) > 400_000:
+        raise HTTPException(413, "too_large")
+    _rate_limit(wu.telegram_id, "export", limit=10, window_s=600)
+    bot = getattr(request.app.state, "bot", None)
+    if bot is None:
+        raise HTTPException(503, "bot_offline")
+    from aiogram.types import BufferedInputFile
+
+    safe_name = (body.filename or "پاسخ.md")[:60]
+    if not safe_name.endswith((".md", ".txt")):
+        safe_name += ".md"
+    try:
+        await bot.send_document(
+            wu.telegram_id,
+            BufferedInputFile(text.encode("utf-8"), filename=safe_name),
+            caption="📄 خروجی از مینی‌اپ",
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("export failed: %s", exc)
+        raise HTTPException(502, "send_failed")
+    return {"ok": True}
 
 
 class SupportBody(BaseModel):

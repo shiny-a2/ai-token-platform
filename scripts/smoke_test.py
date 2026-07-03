@@ -63,6 +63,22 @@ def main() -> int:
         assert "SmokePkg" in r.text, "package create failed"
         print("package create: ok")
 
+    # cleanup: remove test packages so they never show to real users
+    import asyncio
+
+    from sqlalchemy import delete
+
+    from app.db import SessionLocal
+    from app.models import Package
+
+    async def _cleanup():
+        async with SessionLocal() as db:
+            await db.execute(delete(Package).where(Package.name == "SmokePkg"))
+            await db.commit()
+
+    asyncio.run(_cleanup())
+    print("cleanup: ok")
+
     if failures:
         print("FAILURES:", failures)
         return 1

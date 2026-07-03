@@ -166,6 +166,55 @@ def main() -> int:  # noqa: PLR0915
             f"cap=0 must not zero the charge: {body}"
         print(f"server-side cap enforcement: ok (charged={body['charged']})")
 
+        # 13) file upload -> estimate grows -> charged Q&A about the file
+        secret = "زرافه آبی ۴۲"
+        content = ("گزارش داخلی\n" + ("متن پرکننده. " * 300)
+                   + f"\nرمز پروژه: {secret}\n")
+        r = c.post("/api/webapp/chat/upload", headers=user_h,
+                   files={"file": ("report.txt", content.encode("utf-8"),
+                                   "text/plain")})
+        assert r.status_code == 200, r.text
+        up = r.json()
+        assert up["file_id"] and up["tokens"] > 100
+        base = c.post("/api/webapp/chat/estimate", headers=user_h,
+                      json={"text": "رمز چیست؟", "mode": "fast_chat"}).json()
+        with_file = c.post("/api/webapp/chat/estimate", headers=user_h,
+                           json={"text": "رمز چیست؟", "mode": "fast_chat",
+                                 "file_id": up["file_id"]}).json()
+        assert with_file["in_tokens"] > base["in_tokens"] + 100, \
+            "file tokens must be billed into the estimate"
+        r = c.post("/api/webapp/chat/send", headers=user_h,
+                   json={"text": "طبق فایل پیوست، رمز پروژه دقیقاً چیست؟ فقط خود رمز را بنویس.",
+                         "mode": "fast_chat", "file_id": up["file_id"]})
+        body = r.json()
+        assert body.get("ok") and body["charged"] >= 1, body
+        assert "زرافه" in body["reply"], f"file content unused? reply={body['reply'][:120]}"
+        print(f"file Q&A: ok (file={up['tokens']}tok, charged={body['charged']})")
+
+        # 13b) another user must NOT use my file
+        r = c.post("/api/webapp/chat/estimate", headers=other_h,
+                   json={"text": "رمز چیست؟", "mode": "fast_chat",
+                         "file_id": up["file_id"]})
+        assert r.json()["in_tokens"] <= base["in_tokens"] + 20, \
+            "foreign file_id must be ignored"
+        print("file isolation: ok")
+
+        # 14) export needs the bot (offline in tests) -> clean 503
+        r = c.post("/api/webapp/export", headers=user_h,
+                   json={"text": "hello", "filename": "x.md"})
+        assert r.status_code == 503
+        print("export gating: ok")
+
+        # 15) bogus TxID -> verification fails -> stays pending (not auto-approved)
+        r = c.post("/api/webapp/receipt", headers=user_h,
+                   data={"package_id": pkg_id, "txid": "a" * 64})
+        body = r.json()
+        assert body["ok"] and body.get("auto_approved") is False, body
+        rec2 = body["receipt_id"]
+        c.post(f"/api/webapp/admin/receipts/{rec2}/reject", headers=admin_h,
+               json={"note": "تست"})
+        print("crypto verify plumbing: ok (bogus txid stayed pending)")
+
     print("ALL WEBAPP TESTS OK")
     return 0
 

@@ -121,8 +121,12 @@ async def build_messages(
     mode: AIMode,
     new_user_text: str,
     *,
-    recent_limit: int = 10,
+    recent_limit: int = 30,
+    file_text: str | None = None,
+    file_name: str | None = None,
 ) -> list[dict]:
+    """Full-fidelity context by design: no summarization — the user pays for
+    the tokens the history and attachments actually cost."""
     system_parts = [SYSTEM_BASE_FA]
     if mode.description_fa:
         system_parts.append(mode.description_fa)
@@ -132,6 +136,11 @@ async def build_messages(
         facts = "\n".join(f"- {f}" for f in conv.pinned_facts if f)
         if facts:
             system_parts.append("نکات مهم ذخیره‌شده:\n" + facts)
+    if file_text:
+        label = file_name or "پیوست"
+        system_parts.append(
+            f"محتوای فایل پیوست‌شده «{label}» (برای پاسخ به سوال کاربر از آن استفاده کن):\n{file_text}"
+        )
 
     messages: list[dict] = [{"role": "system", "content": "\n\n".join(system_parts)}]
     for m in await recent_messages(db, conv.id, limit=recent_limit):

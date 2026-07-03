@@ -44,7 +44,8 @@ async def on_menu(message: Message, state: FSMContext) -> None:
         data = await state.get_data()
         mode = data.get("mode") or "fast_chat"
         await state.set_state(Flow.chatting)
-        await state.update_data(mode=mode, conv_id=None)
+        # fresh conversation: detach any attached file too
+        await state.update_data(mode=mode, conv_id=None, file_id=None, file_name=None)
         await message.answer(t(lang, "new_chat_started", mode=mode))
 
     elif action == "select_mode":

@@ -82,6 +82,34 @@ async def approve_receipt(
     return receipt, added
 
 
+async def process_txid_receipt(
+    db: AsyncSession, receipt: PaymentReceipt, package: Package | None
+) -> tuple[str, object | None]:
+    """Auto-verify a TxID on-chain. Returns (status, VerifyResult|None):
+    'approved' (auto), 'duplicate', or 'pending' (manual review)."""
+    from app.services import crypto_verify
+
+    if not receipt.txid or package is None:
+        return "pending", None
+    if await crypto_verify.txid_already_used(db, receipt.txid, receipt.id):
+        receipt.admin_note = "⚠️ TxID قبلاً استفاده شده — نیازمند بررسی دستی"
+        await db.commit()
+        return "duplicate", None
+
+    expected = receipt.amount_usd or package.price_usd or 0
+    result = await crypto_verify.verify_txid(db, receipt.txid, expected)
+    if result.verified:
+        approved, _added = await approve_receipt(db, receipt.id, None)
+        approved.admin_note = (
+            f"✅ استعلام خودکار: {result.network} — {result.amount_usd:.2f}$"
+        )
+        await db.commit()
+        return "approved", result
+    receipt.admin_note = f"🔎 استعلام خودکار: {result.note}"
+    await db.commit()
+    return "pending", result
+
+
 async def reject_receipt(
     db: AsyncSession, receipt_id: str, admin_user_id: str | None, note: str = ""
 ) -> PaymentReceipt:

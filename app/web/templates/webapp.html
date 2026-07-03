@@ -84,7 +84,8 @@ th{color:var(--muted);font-weight:600;font-size:11px;}
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const INIT = tg && tg.initData ? tg.initData : "";
 let S = { boot:null, tab:"chat", conv:null, convTitle:"", msgs:[], mode:"fast_chat",
-          imgSize:"1024x1024", pkg:null, busy:false };
+          imgSize:"1024x1024", pkg:null, busy:false,
+          file:null /* {id,name,tokens} attached to current chat */ };
 
 function el(id){ return document.getElementById(id); }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,
@@ -165,7 +166,7 @@ async function renderChatList(){
       "<div>موجودی: <b>"+b.remaining+"</b> <span class='muted'>اعتبار</span></div>"+
       "<button class='btn small' id='newchat'>＋ چت جدید</button></div>"+
     "<div id='chats' class='card'><div class='muted'>در حال بارگذاری…</div></div>";
-  el("newchat").onclick=()=>{ S.conv=""; S.convTitle="چت جدید"; S.msgs=[]; renderChat(); };
+  el("newchat").onclick=()=>{ S.conv=""; S.convTitle="چت جدید"; S.msgs=[]; S.file=null; renderChat(); };
   try{
     const list = await api("/chats");
     el("chats").innerHTML = list.length ? list.map(c=>
@@ -196,8 +197,11 @@ function renderChat(){
       "<button class='btn ghost small' id='back'>‹ چت‌ها</button>"+
       "<span id='modechip'>"+esc(modeName(S.mode))+"</span></div>"+
     (isImg?imgSizeChips():"")+
+    "<div id='filechip'></div>"+
     "<div id='msgs'></div>"+
     "<div id='composer'>"+
+      (isImg?"":"<button class='btn ghost' id='attach' title='پیوست فایل'>📎</button>"+
+       "<input id='fileinp' type='file' accept='.pdf,.txt,.csv,.md,.json,.log' style='display:none'>")+
       "<textarea id='txt' rows='1' placeholder='"+(isImg?"تصویر موردنظر را توصیف کنید…":"پیام خود را بنویسید…")+"'></textarea>"+
       "<button class='btn' id='send'>↥</button></div>"+
     "</div>";
@@ -206,6 +210,11 @@ function renderChat(){
   const ta=el("txt");
   ta.addEventListener("input",()=>{ ta.style.height="auto"; ta.style.height=Math.min(110,ta.scrollHeight)+"px"; });
   el("send").onclick=sendFlow;
+  if(el("attach")){
+    el("attach").onclick=()=>el("fileinp").click();
+    el("fileinp").onchange=uploadAttachment;
+  }
+  drawFileChip();
   drawMsgs();
   if(isImg){ document.querySelectorAll(".imchip").forEach(c=>c.onclick=()=>{
     S.imgSize=c.dataset.s; renderChat(); }); }
@@ -217,16 +226,51 @@ function imgSizeChips(){
     "<span class='chip imchip "+(S.imgSize===o[0]?"sel":"")+"' data-s='"+o[0]+"'>"+o[1]+"</span>").join("")+"</div>";
 }
 
+function drawFileChip(){
+  const c=el("filechip"); if(!c) return;
+  c.innerHTML = S.file ?
+    "<div class='chip sel' style='margin-bottom:6px;'>📎 "+esc(S.file.name)+
+    " <span class='muted'>(~"+S.file.tokens.toLocaleString("fa")+" توکن)</span>"+
+    " <span id='rmfile' style='cursor:pointer;color:var(--red2);'>✖</span></div>" : "";
+  if(S.file && el("rmfile")) el("rmfile").onclick=()=>{ S.file=null; drawFileChip(); };
+}
+
+async function uploadAttachment(e){
+  const f=e.target.files[0]; if(!f) return;
+  e.target.value="";
+  toast("در حال آپلود فایل…", 8000);
+  const fd=new FormData(); fd.append("file", f);
+  try{
+    const r=await fetch("/api/webapp/chat/upload",
+      {method:"POST", headers:{"X-Init-Data":INIT}, body:fd});
+    if(!r.ok) throw new Error("http_"+r.status);
+    const d=await r.json();
+    S.file={id:d.file_id, name:d.name, tokens:d.tokens};
+    drawFileChip();
+    toast("📎 فایل پیوست شد — سوال خود را بپرسید");
+  }catch(_){ toast("آپلود ناموفق (فقط PDF/متن، تا ۱۵MB)"); }
+}
+
 function drawMsgs(){
   const box=el("msgs");
-  box.innerHTML = S.msgs.length ? S.msgs.map(m=>{
+  box.innerHTML = S.msgs.length ? S.msgs.map((m,i)=>{
     let inner = m.image_b64 ?
       "<img src='data:image/png;base64,"+m.image_b64+"'>" : esc(m.content);
     let meta = (m.charged? "کسر: "+m.charged+" اعتبار" : "");
+    let exportBtn = (m.role==="assistant" && !m.image_b64 && (m.content||"").length>700) ?
+      "<div style='margin-top:6px;'><button class='btn ghost small' data-exp='"+i+"'>📄 دریافت به‌صورت فایل</button></div>" : "";
     return "<div class='msg "+(m.role==="user"?"user":"assistant")+"'>"+inner+
-      (meta?"<div class='meta'>"+meta+"</div>":"")+"</div>";
+      (meta?"<div class='meta'>"+meta+"</div>":"")+exportBtn+"</div>";
   }).join("") : "<div class='muted' style='text-align:center;margin-top:30px;'>موتور: "+
       esc(modeName(S.mode))+"<br>اولین پیام را بفرستید.</div>";
+  box.querySelectorAll("[data-exp]").forEach(b=>b.onclick=async()=>{
+    const m=S.msgs[parseInt(b.dataset.exp,10)]; if(!m) return;
+    b.disabled=true;
+    try{ await api("/export",{json:{text:m.content, filename:"پاسخ.md"}});
+      toast("📄 فایل به چت تلگرام شما ارسال شد"); }
+    catch(_){ toast("ارسال فایل ناموفق بود"); }
+    b.disabled=false;
+  });
   box.scrollTop = box.scrollHeight;
 }
 
@@ -239,7 +283,8 @@ async function sendFlow(){
   const m=modeOf(S.mode);
   try{
     const est = await api("/chat/estimate",{json:{text:text, mode:S.mode,
-      conv_id:S.conv||null, size:S.imgSize, quality:"medium"}});
+      conv_id:S.conv||null, size:S.imgSize, quality:"medium",
+      file_id:(S.file?S.file.id:null)}});
     if(est.balance < est.min && !S.boot.user.unrestricted){
       return sheet("<h1>اعتبار کافی نیست</h1><div class='muted'>موجودی: "+est.balance+
         " — هزینه تقریبی: "+est.min+" تا "+est.max+" اعتبار</div>"+
@@ -272,7 +317,8 @@ async function doSend(text, cap){
   try{
     const m=modeOf(S.mode);
     const body={text:text, mode:S.mode, conv_id:S.conv||null, cap:cap,
-                size:S.imgSize, quality:"medium"};
+                size:S.imgSize, quality:"medium",
+                file_id:(S.file?S.file.id:null)};
     const r = await api("/chat/send",{json:body});
     S.msgs = S.msgs.filter(x=>!x._tmp);
     if(!r.ok){
@@ -361,12 +407,16 @@ async function submitReceipt(){
   fd.append("package_id", S.pkg.id);
   fd.append("txid", txid);
   if(f) fd.append("photo", f);
-  el("subR").disabled=true; el("subR").innerHTML="<span class='spin'></span>";
+  el("subR").disabled=true; el("subR").innerHTML="<span class='spin'></span> در حال استعلام…";
   try{
-    await fetch("/api/webapp/receipt", {method:"POST", headers:{"X-Init-Data":INIT}, body:fd})
+    const d = await fetch("/api/webapp/receipt", {method:"POST", headers:{"X-Init-Data":INIT}, body:fd})
       .then(r=>{ if(!r.ok) throw new Error("http_"+r.status); return r.json(); });
     closeSheet();
-    toast("✅ رسید ثبت شد و برای ادمین ارسال شد. پس از تایید، اعتبار اضافه می‌شود.", 4000);
+    if(d.auto_approved){
+      toast("🎉 تراکنش استعلام و تایید شد — "+(d.added||0).toLocaleString("fa")+" اعتبار اضافه شد!", 5000);
+    }else{
+      toast("✅ رسید ثبت شد و برای ادمین ارسال شد. پس از تایید، اعتبار اضافه می‌شود.", 4000);
+    }
   }catch(e){ toast("خطا در ثبت رسید"); el("subR").disabled=false; el("subR").textContent="ثبت رسید"; }
 }
 

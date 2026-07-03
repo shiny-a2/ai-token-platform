@@ -227,14 +227,14 @@ async def on_photo(message: Message, state: FSMContext) -> None:
 
 @router.message(F.document)
 async def on_document(message: Message, state: FSMContext) -> None:
+    from app.services.cost_estimator import count_tokens
+    from app.services.file_extract import extract_text, extractable
+
     _, lang = await resolve_user(message.from_user)
     doc = message.document
     name = (doc.file_name or "").lower()
     ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
-    if ext in BLOCKED_EXT:
-        await message.answer(t(lang, "file_blocked"))
-        return
-    if ext not in ALLOWED_DOC_EXT:
+    if ext in BLOCKED_EXT or ext not in ALLOWED_DOC_EXT:
         await message.answer(t(lang, "file_blocked"))
         return
     if (doc.file_size or 0) > MAX_FILE_MB * 1024 * 1024:
@@ -247,12 +247,35 @@ async def on_document(message: Message, state: FSMContext) -> None:
     fname = f"{new_uuid()}{ext}"
     path = STORAGE_DIR / fname
     path.write_bytes(raw)
+
+    text = extract_text(path, doc.file_name or fname) if extractable(name) else None
     async with SessionLocal() as db:
         user = await users_svc.get_or_create(db, message.from_user.id)
-        db.add(FileAsset(
+        fa = FileAsset(
             user_id=user.id, original_filename=doc.file_name, mime_type=doc.mime_type,
             size_bytes=len(raw), storage_path=str(path), telegram_file_id=doc.file_id,
-            kind="document", status="stored",
-        ))
+            kind="document", status="stored", extracted_text=text,
+        )
+        db.add(fa)
         await db.commit()
-    await message.answer(t(lang, "file_stored", size=max(1, len(raw) // 1024)))
+        await db.refresh(fa)
+
+    if text:
+        tokens = count_tokens(text)
+        await state.update_data(file_id=fa.id, file_name=doc.file_name)
+        note = (
+            f"📎 فایل «{doc.file_name}» پیوست شد (حدود {tokens:,} توکن).\n"
+            "سوال خود را دربارهٔ آن بپرسید — هزینهٔ فایل در تخمین پیام بعدی لحاظ می‌شود.\n"
+            "برای جدا کردن فایل، چت جدید بزنید."
+            if lang == "fa" else
+            f"📎 “{doc.file_name}” attached (~{tokens:,} tokens). Ask about it; "
+            "its cost is included in the next estimate."
+        )
+        await message.answer(note)
+        # a caption acts as the first question about the file
+        if message.caption:
+            from app.bot.handlers.chat import process_prompt
+
+            await process_prompt(message, state, message.caption.strip())
+    else:
+        await message.answer(t(lang, "file_stored", size=max(1, len(raw) // 1024)))

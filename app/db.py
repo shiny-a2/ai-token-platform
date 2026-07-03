@@ -50,6 +50,9 @@ async def _run_mini_migrations(conn) -> None:
         "packages": {
             "price_toman": "ALTER TABLE packages ADD COLUMN price_toman INTEGER",
         },
+        "files": {
+            "extracted_text": "ALTER TABLE files ADD COLUMN extracted_text TEXT",
+        },
     }
     for table, columns in wanted.items():
         rows = (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()

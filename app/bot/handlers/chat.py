@@ -89,6 +89,20 @@ async def on_text(message: Message, state: FSMContext) -> None:
     await process_prompt(message, state, message.text.strip())
 
 
+async def _attached_file(db, state: FSMContext, user_id: str):
+    """Return (file_text, file_name) for the conversation's attachment, if any."""
+    from app.models import FileAsset
+
+    data = await state.get_data()
+    file_id = data.get("file_id")
+    if not file_id:
+        return None, None
+    fa = await db.get(FileAsset, file_id)
+    if fa is None or fa.user_id != user_id or not fa.extracted_text:
+        return None, None
+    return fa.extracted_text, (data.get("file_name") or fa.original_filename)
+
+
 async def process_prompt(message: Message, state: FSMContext, user_text: str) -> None:
     """Estimate cost, optionally ask for confirmation, then run the chat."""
     async with SessionLocal() as db:
@@ -99,7 +113,9 @@ async def process_prompt(message: Message, state: FSMContext, user_text: str) ->
         if mode is None:
             await message.answer(t(lang, "err_generic"))
             return
-        est = await chat_service.estimate_turn(db, user, mode, user_text)
+        file_text, _ = await _attached_file(db, state, user.id)
+        est = await chat_service.estimate_turn(db, user, mode, user_text,
+                                               file_text=file_text)
         unrestricted = user.unrestricted_usage
         supports_image_out = mode.supports_image_output
 
@@ -143,8 +159,10 @@ async def _run_chat(message: Message, tg_user, state: FSMContext, user_text: str
             mode_code = await _effective_mode_code(state, user)
             mode = await chat_service.load_mode(db, mode_code)
             data = await state.get_data()
+            file_text, file_name = await _attached_file(db, state, user.id)
             result = await chat_service.run_turn(
                 db, user, mode, user_text, conv_id=data.get("conv_id"), cap=cap,
+                file_text=file_text, file_name=file_name,
             )
     except Exception as exc:  # noqa: BLE001
         log.exception("chat failed: %s", exc)
@@ -166,9 +184,16 @@ async def _run_chat(message: Message, tg_user, state: FSMContext, user_text: str
     footer = t(lang, "charged_footer", charged=result.charged,
                remaining=result.remaining)
     full = result.reply + footer
-    # telegram hard limit ~4096 chars
     if len(full) > 4000:
-        await thinking.edit_text(result.reply[:3900])
-        await message.answer(footer)
+        # long answers are DELIVERED AS A FILE (telegram cap ~4096 chars)
+        from aiogram.types import BufferedInputFile
+
+        doc = BufferedInputFile(result.reply.encode("utf-8"), filename="پاسخ.md")
+        preview = result.reply[:900] + "…"
+        await thinking.edit_text(preview + footer)
+        await message.answer_document(
+            doc,
+            caption="📄 متن کامل پاسخ" if lang == "fa" else "📄 Full answer",
+        )
     else:
         await thinking.edit_text(full)
