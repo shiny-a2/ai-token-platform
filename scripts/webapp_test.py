@@ -281,6 +281,28 @@ def main() -> int:  # noqa: PLR0915
                       json={"text": "x"}).status_code == 403
         print("broadcast gating: ok")
 
+        # 21) USD->Toman rate applies to ALL packages (rounded to 1000)
+        before = {p["id"]: p["price_toman"]
+                  for p in c.get("/api/webapp/admin/packages", headers=admin_h).json()}
+        r = c.post("/api/webapp/admin/packages/apply-rate", headers=admin_h,
+                   json={"rate": 104_500})
+        body = r.json()
+        assert body["ok"] and body["updated"] >= 5
+        for p in body["packages"]:
+            expected = round(p["price_usd"] * 104_500 / 1000) * 1000
+            assert p["price_toman"] == expected, (p, expected)
+        # rate persisted for prefill
+        econ = c.get("/api/webapp/admin/overview", headers=admin_h).json()["econ"]
+        assert econ["usd_to_toman_rate"] == 104_500
+        # non-admin cannot apply
+        assert c.post("/api/webapp/admin/packages/apply-rate", headers=user_h,
+                      json={"rate": 104_500}).status_code == 403
+        # restore previous Toman prices (leave live data untouched)
+        for pid, toman in before.items():
+            c.post(f"/api/webapp/admin/packages/{pid}/update", headers=admin_h,
+                   json={"price_toman": toman or 0})
+        print("usd->toman rate apply: ok")
+
     print("ALL WEBAPP TESTS OK")
     return 0
 

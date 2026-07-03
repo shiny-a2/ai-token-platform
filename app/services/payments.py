@@ -82,6 +82,22 @@ async def approve_receipt(
     return receipt, added
 
 
+async def apply_toman_rate(db: AsyncSession, rate: int) -> int:
+    """Recompute every package's Toman price from its USD price at `rate`
+    (Toman per 1 USD). Prices are rounded to the nearest 1,000 Toman.
+    The rate is persisted so the form is prefilled next time."""
+    from app.services.settings_store import set_setting
+
+    rows = (await db.execute(select(Package))).scalars().all()
+    for p in rows:
+        toman = p.price_usd * rate
+        p.price_toman = (
+            int(round(toman / 1000.0) * 1000) if toman >= 1000 else int(round(toman))
+        )
+    await set_setting(db, "usd_to_toman_rate", str(int(rate)))  # commits
+    return len(rows)
+
+
 async def process_txid_receipt(
     db: AsyncSession, receipt: PaymentReceipt, package: Package | None
 ) -> tuple[str, object | None]:

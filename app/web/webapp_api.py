@@ -30,7 +30,7 @@ from app.services import chat_service
 from app.services import payments as pay_svc
 from app.services import usage as usage_svc
 from app.services import users as users_svc
-from app.services.settings_store import get_economics
+from app.services.settings_store import get_economics, get_setting
 from app.web.webapp_auth import WebAppUser, webapp_admin, webapp_user
 
 router = APIRouter(prefix="/api/webapp")
@@ -743,6 +743,9 @@ async def admin_overview(
             "unit_price_usd": econ.token_unit_price_usd,
             "markup": markup,
             "cost_per_10k_usd": cost_per_10k,
+            "usd_to_toman_rate": int(
+                await get_setting(db, "usd_to_toman_rate", "0") or 0
+            ),
         },
         "pending": [
             {
@@ -972,6 +975,32 @@ async def admin_update_package(
         pkg.is_active = body.is_active
     await db.commit()
     return {"ok": True}
+
+
+class ApplyRateBody(BaseModel):
+    rate: int  # Toman per 1 USD
+
+
+@router.post("/admin/packages/apply-rate")
+async def admin_apply_rate(
+    body: ApplyRateBody, wu: WebAppUser = Depends(webapp_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    """Set today's USD→Toman rate and refresh all package Toman prices."""
+    if body.rate < 1_000 or body.rate > 100_000_000:
+        raise HTTPException(422, "bad_rate")
+    updated = await pay_svc.apply_toman_rate(db, body.rate)
+    rows = (
+        await db.execute(select(Package).order_by(Package.sort_order))
+    ).scalars().all()
+    return {
+        "ok": True, "rate": body.rate, "updated": updated,
+        "packages": [
+            {"id": p.id, "name": p.name, "price_usd": p.price_usd,
+             "price_toman": p.price_toman}
+            for p in rows
+        ],
+    }
 
 
 class BroadcastBody(BaseModel):

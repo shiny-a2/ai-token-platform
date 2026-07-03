@@ -6,6 +6,17 @@
   (با قیمت واحد {{ econ.token_unit_price_usd }}$ و ضریب سود {{ econ.global_markup_multiplier }}).
 </p>
 
+<h2>💵 نرخ روز دلار</h2>
+<form method="post" action="/admin/packages/apply-rate" class="card">
+  <div class="row">
+    <div><label>قیمت هر دلار (تومان)</label>
+      <input type="number" name="rate" value="{{ toman_rate or '' }}" placeholder="مثلاً 105000" required></div>
+    <div style="display:flex;align-items:flex-end;">
+      <button class="btn">به‌روزرسانی قیمت تومانی همه پکیج‌ها</button></div>
+  </div>
+  <p class="muted" style="margin:8px 0 0;">قیمت تومانی هر پکیج = قیمت دلاری × نرخ، گردشده به هزار تومان. قیمت‌های دلاری دست نمی‌خورند.</p>
+</form>
+
 <h2>پکیج جدید</h2>
 <form method="post" action="/admin/packages/create" class="card">
   <div class="row">

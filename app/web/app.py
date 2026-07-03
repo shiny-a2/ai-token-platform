@@ -248,8 +248,21 @@ def create_app(lifespan=None) -> FastAPI:
             pct = (margin / p.price_usd * 100) if p.price_usd else 0
             costs[p.id] = {"cost": round(cost, 2), "margin": round(margin, 2),
                            "pct": round(pct)}
+        from app.services.settings_store import get_setting
+
+        toman_rate = await get_setting(db, "usd_to_toman_rate", "0")
         return render(request, "packages.html", "packages",
-                      packages=rows, costs=costs, econ=econ)
+                      packages=rows, costs=costs, econ=econ,
+                      toman_rate=int(toman_rate or 0))
+
+    @app.post("/admin/packages/apply-rate")
+    async def apply_rate(
+        request: Request, _=Depends(require_login),
+        rate: int = Form(...), db: AsyncSession = Depends(get_session),
+    ):
+        if 1_000 <= rate <= 100_000_000:
+            await pay_svc.apply_toman_rate(db, rate)
+        return RedirectResponse("/admin/packages", status_code=303)
 
     @app.post("/admin/packages/create")
     async def create_package(
