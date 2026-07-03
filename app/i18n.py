@@ -198,6 +198,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "fa": "اعتبار شما منقضی شده است. لطفاً دوباره شارژ کنید.",
         "en": "Your credit has expired. Please recharge.",
     },
+    "err_mode_not_allowed": {
+        "fa": "دسترسی شما به این موتور فعال نیست. با پشتیبانی تماس بگیرید.",
+        "en": "This engine is not enabled for your account. Contact support.",
+    },
     "err_generic": {
         "fa": "خطایی رخ داد. لطفاً بعداً دوباره تلاش کنید.",
         "en": "Something went wrong. Please try again later.",

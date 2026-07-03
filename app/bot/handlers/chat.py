@@ -31,6 +31,9 @@ async def on_mode(cb: CallbackQuery, state: FSMContext) -> None:
     async with SessionLocal() as db:
         mode = await chat_service.load_mode(db, code)
         user = await users_svc.get_or_create(db, cb.from_user.id)
+        if mode and not chat_service.mode_allowed(user, mode.code):
+            await cb.answer(t(user.language, "err_mode_not_allowed"), show_alert=True)
+            return
         user.default_mode = mode.code if mode else code
         await db.commit()
         lang = user.language
@@ -176,6 +179,8 @@ async def _run_chat(message: Message, tg_user, state: FSMContext, user_text: str
             await thinking.edit_text(
                 t(lang, "err_insufficient", balance=result.balance, needed=result.needed)
             )
+        elif result.error == "mode_not_allowed":
+            await thinking.edit_text(t(lang, "err_mode_not_allowed"))
         else:
             await thinking.edit_text(t(lang, "err_openai"))
         return

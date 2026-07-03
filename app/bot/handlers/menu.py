@@ -26,13 +26,16 @@ def is_menu(message: Message) -> bool:
     return match_menu(message.text or "") is not None
 
 
-async def _active_modes(db) -> list[AIMode]:
+async def _active_modes(db, user=None) -> list[AIMode]:
     rows = (
         await db.execute(
             select(AIMode).where(AIMode.is_active.is_(True)).order_by(AIMode.sort_order)
         )
     ).scalars().all()
-    return list(rows)
+    modes = list(rows)
+    if user is not None and user.allowed_modes is not None:
+        modes = [m for m in modes if m.code in user.allowed_modes]
+    return modes
 
 
 @router.message(is_menu)
@@ -50,7 +53,8 @@ async def on_menu(message: Message, state: FSMContext) -> None:
 
     elif action == "select_mode":
         async with SessionLocal() as db:
-            modes = await _active_modes(db)
+            user = await users_svc.get_or_create(db, message.from_user.id)
+            modes = await _active_modes(db, user)
         await message.answer(t(lang, "choose_mode_title"), reply_markup=modes_kb(modes, lang))
 
     elif action == "usage":

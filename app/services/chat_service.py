@@ -48,6 +48,20 @@ async def load_mode(db: AsyncSession, code: str | None) -> AIMode | None:
     return mode
 
 
+def mode_allowed(user: User, mode_code: str) -> bool:
+    """None = everything allowed; otherwise the admin-set allowlist rules."""
+    if user.allowed_modes is None:
+        return True
+    return mode_code in user.allowed_modes
+
+
+def user_effort(user: User, mode: AIMode) -> str | None:
+    """The user's chosen effort for this mode (falls back to the mode default)."""
+    overrides = user.effort_overrides or {}
+    value = (overrides.get(mode.code) or "").strip().lower()
+    return value if value in ("low", "medium", "high", "xhigh") else None
+
+
 @dataclass
 class TurnEstimate:
     mode_code: str
@@ -64,7 +78,10 @@ async def estimate_turn(
 ) -> TurnEstimate:
     econ = await get_economics(db)
     context_tokens = count_tokens(file_text) if file_text else 0
-    est: Estimate = estimate(mode, text, econ, context_tokens=context_tokens)
+    est: Estimate = estimate(
+        mode, text, econ, context_tokens=context_tokens,
+        effort_override=user_effort(user, mode),
+    )
     bal = await users_svc.get_balance(db, user.id)
     return TurnEstimate(
         mode_code=mode.code,
@@ -104,12 +121,17 @@ async def run_turn(
     econ = await get_economics(db)
     bal = await users_svc.get_balance(db, user.id)
 
+    if not mode_allowed(user, mode.code):
+        return TurnResult(ok=False, error="mode_not_allowed", balance=bal.remaining)
+
     if bal.is_expired:
         return TurnResult(ok=False, error="expired", balance=bal.remaining)
 
+    effort = user_effort(user, mode)
     if not skip_balance_gate and not user.unrestricted_usage:
         context_tokens = count_tokens(file_text) if file_text else 0
-        est = estimate(mode, text, econ, context_tokens=context_tokens)
+        est = estimate(mode, text, econ, context_tokens=context_tokens,
+                       effort_override=effort)
         if bal.remaining < est.estimated_ai_tokens_min:
             return TurnResult(
                 ok=False, error="insufficient",
@@ -129,7 +151,7 @@ async def run_turn(
     )
 
     try:
-        result = await openai_chat(db, mode, messages)
+        result = await openai_chat(db, mode, messages, effort_override=effort)
     except OpenAIError as exc:
         log.warning("openai error: %s", exc)
         await usage_svc.log_usage(

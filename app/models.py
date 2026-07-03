@@ -38,6 +38,10 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), default="user")  # user | admin
     status: Mapped[str] = mapped_column(String(16), default="active")
     default_mode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # None = all active modes allowed; list of codes = only those
+    allowed_modes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # per-mode reasoning-effort overrides chosen by the user, e.g. {"thinking": "high"}
+    effort_overrides: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     unrestricted_usage: Mapped[bool] = mapped_column(Boolean, default=False)
     accepted_privacy: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

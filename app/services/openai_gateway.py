@@ -90,6 +90,8 @@ async def chat(
     db: AsyncSession,
     mode: AIMode,
     messages: list[dict],
+    *,
+    effort_override: str | None = None,
 ) -> ChatResult:
     keys = await _candidate_keys(db)
     if not keys:
@@ -104,9 +106,12 @@ async def chat(
                 "messages": messages,
                 "max_completion_tokens": mode.max_output_tokens,
             }
-            effort = (mode.reasoning_effort or "").strip().lower()
+            effort = (effort_override or mode.reasoning_effort or "").strip().lower()
             if effort and effort != "none" and mode.model.startswith(("gpt-5", "o3", "o4")):
-                kwargs["reasoning_effort"] = {"xhigh": "high"}.get(effort, effort)
+                # gpt-5.x accepts xhigh natively; older o-series caps at high
+                if not mode.model.startswith("gpt-5"):
+                    effort = {"xhigh": "high"}.get(effort, effort)
+                kwargs["reasoning_effort"] = effort
             resp = await client.chat.completions.create(**kwargs)
             choice = resp.choices[0]
             usage = resp.usage

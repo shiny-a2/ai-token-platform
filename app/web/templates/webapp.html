@@ -93,6 +93,9 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,
 function toast(msg, ms){ const t=el("toast"); t.textContent=msg; t.style.display="block";
   clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none", ms||2600); }
 function sheet(html){ el("sheet").innerHTML=html; el("overlay").classList.add("show"); }
+function ask(msg){ return new Promise(res=>{
+  if(tg && tg.showConfirm){ try{ tg.showConfirm(msg, ok=>res(!!ok)); return; }catch(e){} }
+  res(window.confirm(msg)); }); }
 function closeSheet(){ el("overlay").classList.remove("show"); }
 el("overlay").addEventListener("click", e=>{ if(e.target.id==="overlay") closeSheet(); });
 
@@ -324,6 +327,7 @@ async function doSend(text, cap){
     if(!r.ok){
       const msgs={expired:"اعتبار شما منقضی شده. لطفاً شارژ کنید.",
         insufficient:"اعتبار کافی نیست (نیاز: "+(r.needed||"?")+"، موجودی: "+(r.balance||0)+").",
+        mode_not_allowed:"دسترسی شما به این موتور فعال نیست. با پشتیبانی تماس بگیرید.",
         openai:"ارتباط با هوش مصنوعی برقرار نشد. اعتباری کسر نشد."};
       pushMsg({role:"assistant", content:(msgs[r.error]||"خطایی رخ داد.")});
     }else{
@@ -340,21 +344,43 @@ async function doSend(text, cap){
 }
 
 /* ---------------- modes ---------------- */
+const EFFORTS=[["low","کم"],["medium","متوسط"],["high","زیاد"],["xhigh","خیلی زیاد"]];
+function effortName(v){ const e=EFFORTS.find(x=>x[0]===v); return e?e[1]:"—"; }
+
 function renderModes(){
   el("view").innerHTML = "<h1>🧠 انتخاب موتور</h1>"+
+    "<p class='muted'>سطح «تفکر» هرچه بالاتر باشد، پاسخ عمیق‌تر و مصرف اعتبار بیشتر است.</p>"+
     S.boot.modes.map(m=>
       "<div class='modecard "+(S.mode===m.code?"sel":"")+"' data-c='"+m.code+"'>"+
-      "<div style='font-weight:700;'>"+esc(m.fa_name)+"</div>"+
+      "<div style='font-weight:700;'>"+esc(m.fa_name)+
+      (m.can_effort && m.effort && m.effort!=="none" ?
+        " <span class='muted' style='font-weight:400;font-size:11px;'>· تفکر: "+effortName(m.effort)+"</span>":"")+
+      "</div>"+
       "<div class='muted' style='margin-top:4px;'>"+esc(m.description_fa||"")+"</div>"+
       (m.requires_confirmation?"<div class='pill warn' style='margin-top:6px;'>با تایید مصرف</div>":"")+
+      (m.can_effort ?
+        "<div style='margin-top:8px;' data-stop='1'>"+EFFORTS.map(ef=>
+          "<span class='chip "+(m.effort===ef[0]?"sel":"")+"' data-ef='"+ef[0]+"' data-m='"+m.code+"'>"+ef[1]+"</span>"
+        ).join("")+"</div>" : "")+
       "</div>").join("");
-  document.querySelectorAll(".modecard").forEach(c=>c.onclick=async()=>{
+  document.querySelectorAll(".modecard").forEach(c=>c.onclick=async(ev)=>{
+    if(ev.target.dataset.ef || ev.target.closest("[data-stop]")) return; // effort chips handle themselves
     try{
       const r=await api("/mode",{json:{code:c.dataset.c}});
       S.mode=r.default_mode; S.boot.user.default_mode=r.default_mode;
       toast("موتور فعال: "+modeName(S.mode));
       renderModes();
     }catch(e){ toast("خطا در تغییر موتور"); }
+  });
+  document.querySelectorAll("[data-ef]").forEach(ch=>ch.onclick=async(ev)=>{
+    ev.stopPropagation();
+    const code=ch.dataset.m, effort=ch.dataset.ef;
+    try{
+      await api("/mode/effort",{json:{code:code, effort:effort}});
+      const m=modeOf(code); if(m) m.effort=effort;
+      toast("سطح تفکر "+esc(modeName(code))+": "+effortName(effort));
+      renderModes();
+    }catch(e){ toast("خطا در تغییر سطح تفکر"); }
   });
 }
 
@@ -500,7 +526,14 @@ async function renderAdmin(){
         "<button class='btn green small' data-ok='"+r.id+"'>تایید</button>"+
         "<button class='btn small' data-no='"+r.id+"'>رد</button></div></div></div>").join("")
         : "<div class='card muted'>رسیدی در انتظار نیست. ✅</div>")+"</div>"+
-      "<h1 style='font-size:14px;'>👥 کاربران</h1><div id='ulist' class='card muted'>در حال بارگذاری…</div>"+
+      "<div class='row' style='justify-content:space-between;align-items:center;'>"+
+      "<h1 style='font-size:14px;'>👥 کاربران</h1>"+
+      "<button class='btn small' id='addU'>＋ افزودن کاربر</button></div>"+
+      "<div id='ulist' class='card muted'>در حال بارگذاری…</div>"+
+      "<h1 style='font-size:14px;'>💳 قیمت پکیج‌ها</h1><div id='plist' class='card muted'>در حال بارگذاری…</div>"+
+      "<h1 style='font-size:14px;'>📣 پیام همگانی</h1>"+
+      "<div class='card'><textarea id='bcast' rows='3' placeholder='متن پیام برای همه کاربران…'></textarea>"+
+      "<button class='btn' style='margin-top:8px;' id='bcastS'>ارسال به همه</button></div>"+
       "<div style='margin-top:10px;'><button class='btn ghost small' id='dash'>🖥 داشبورد کامل وب</button></div>";
     document.querySelectorAll("[data-ok]").forEach(b=>b.onclick=async()=>{
       try{ const r=await api("/admin/receipts/"+b.dataset.ok+"/approve",{json:{}});
@@ -510,15 +543,105 @@ async function renderAdmin(){
       try{ await api("/admin/receipts/"+b.dataset.no+"/reject",{json:{note:""}});
         toast("رد شد"); renderAdmin(); }catch(e){ toast("خطا"); }});
     el("dash").onclick=()=>{ if(tg) tg.openLink(location.origin+"/admin"); };
-    const us = await api("/admin/users");
+    el("addU").onclick=addUserSheet;
+    el("bcastS").onclick=async()=>{
+      const v=el("bcast").value.trim(); if(!v) return;
+      if(!(await ask("این پیام برای همه کاربران ارسال شود؟"))) return;
+      el("bcastS").disabled=true; el("bcastS").innerHTML="<span class='spin'></span> در حال ارسال…";
+      try{ const r=await api("/admin/broadcast",{json:{text:v}});
+        el("bcast").value=""; toast("📣 ارسال شد: "+r.sent+" موفق"+(r.failed?"، "+r.failed+" ناموفق":""), 4500);
+      }catch(e){ toast("خطا در ارسال همگانی: "+e.message); }
+      el("bcastS").disabled=false; el("bcastS").textContent="ارسال به همه";
+    };
+    S.adminUsers = await api("/admin/users");
     el("ulist").classList.remove("muted");
-    el("ulist").innerHTML = "<table><tr><th>نام</th><th>آیدی</th><th>باقی‌مانده</th><th></th></tr>"+
-      us.map(u=>"<tr><td>"+esc(u.name)+"</td><td class='muted'>"+u.telegram_id+"</td>"+
-      "<td>"+u.remaining+"</td><td><button class='btn ghost small' data-adj='"+u.id+"' data-n='"+esc(u.name)+"'>اعتبار</button></td></tr>").join("")+"</table>";
-    document.querySelectorAll("[data-adj]").forEach(b=>b.onclick=()=>adjSheet(b.dataset.adj, b.dataset.n));
+    el("ulist").innerHTML = "<table><tr><th>نام</th><th>آیدی</th><th>باقی‌مانده</th><th>موتورها</th><th></th></tr>"+
+      S.adminUsers.map((u,i)=>"<tr><td>"+esc(u.name)+"</td><td class='muted'>"+u.telegram_id+"</td>"+
+      "<td>"+u.remaining+"</td>"+
+      "<td class='muted'>"+(u.allowed_modes===null?"همه":u.allowed_modes.length)+"</td>"+
+      "<td style='white-space:nowrap;'>"+
+      "<button class='btn ghost small' data-adj='"+i+"'>اعتبار</button> "+
+      "<button class='btn ghost small' data-lim='"+i+"'>موتورها</button> "+
+      "<button class='btn small' data-del='"+i+"'>حذف</button></td></tr>").join("")+"</table>";
+    document.querySelectorAll("[data-adj]").forEach(b=>b.onclick=()=>{
+      const u=S.adminUsers[b.dataset.adj]; adjSheet(u.id, u.name); });
+    document.querySelectorAll("[data-lim]").forEach(b=>b.onclick=()=>modesSheet(S.adminUsers[b.dataset.lim]));
+    document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delUser(S.adminUsers[b.dataset.del]));
+    await renderAdminPackages();
   }catch(e){
     el("view").innerHTML="<h1>🛡 پنل ادمین</h1><div class='card muted'>خطا: "+esc(e.message)+"</div>";
   }
+}
+
+async function renderAdminPackages(){
+  try{
+    const ps = await api("/admin/packages");
+    el("plist").classList.remove("muted");
+    el("plist").innerHTML = ps.map((p,i)=>
+      "<div class='row' style='align-items:flex-end;border-bottom:1px solid var(--line);padding:8px 0;'>"+
+      "<div style='flex:1.2;'><b>"+esc(p.name)+"</b><div class='muted'>"+p.ai_tokens.toLocaleString("fa")+" اعتبار"+
+        (p.is_active?"":" · <span class='pill bad'>غیرفعال</span>")+"</div></div>"+
+      "<div style='flex:1;'><label class='muted'>تومان (کاربر)</label>"+
+        "<input type='number' id='pt"+i+"' value='"+(p.price_toman||0)+"'></div>"+
+      "<div style='flex:.7;'><label class='muted'>دلار (کریپتو)</label>"+
+        "<input type='number' step='0.5' id='pu"+i+"' value='"+p.price_usd+"'></div>"+
+      "<button class='btn ghost small' data-psave='"+i+"'>ذخیره</button></div>").join("");
+    document.querySelectorAll("[data-psave]").forEach(b=>b.onclick=async()=>{
+      const i=b.dataset.psave, p=ps[i];
+      const toman=parseInt(el("pt"+i).value||"0",10), usd=parseFloat(el("pu"+i).value||"0");
+      try{ await api("/admin/packages/"+p.id+"/update",{json:{price_usd:usd, price_toman:toman}});
+        toast("✅ "+p.name+" ذخیره شد");
+        S.boot.packages = null; // refetch on next recharge view
+        const nb = await api("/bootstrap"); S.boot.packages = nb.packages;
+      }catch(e){ toast("خطا در ذخیره"); }
+    });
+  }catch(e){ el("plist").innerHTML="خطا در بارگذاری پکیج‌ها"; }
+}
+
+function addUserSheet(){
+  sheet("<h1>＋ افزودن کاربر</h1>"+
+    "<label class='muted'>آیدی عددی تلگرام (از @userinfobot)</label>"+
+    "<input id='nuId' type='number' placeholder='مثلاً 123456789' style='margin:6px 0;'>"+
+    "<label class='muted'>نام (اختیاری)</label>"+
+    "<input id='nuName' style='margin:6px 0;'>"+
+    "<label class='muted'>اعتبار اولیه</label>"+
+    "<input id='nuCr' type='number' value='0' style='margin:6px 0;'>"+
+    "<button class='btn' style='width:100%;margin-top:10px;' id='nuS'>افزودن</button>");
+  el("nuS").onclick=async()=>{
+    const id=parseInt(el("nuId").value||"0",10);
+    if(!id) return toast("آیدی عددی لازم است");
+    try{
+      await api("/admin/users/create",{json:{telegram_id:id,
+        first_name:el("nuName").value.trim(), credits:parseInt(el("nuCr").value||"0",10)}});
+      closeSheet(); toast("✅ کاربر اضافه شد"); renderAdmin();
+    }catch(e){ toast(e.message==="already_exists"?"این کاربر قبلاً وجود دارد":"خطا: "+e.message); }
+  };
+}
+
+async function delUser(u){
+  if(!(await ask("کاربر «"+u.name+"» ("+u.telegram_id+") و همه داده‌هایش حذف شود؟ برگشت‌پذیر نیست."))) return;
+  try{ await api("/admin/users/"+u.id+"/delete",{json:{}});
+    toast("🗑 حذف شد"); renderAdmin(); }
+  catch(e){ toast(e.message==="cannot_delete_admin"?"ادمین را نمی‌توان حذف کرد":"خطا: "+e.message); }
+}
+
+function modesSheet(u){
+  const all=S.boot.modes;
+  const allowed = u.allowed_modes; // null=all
+  sheet("<h1>موتورهای مجاز: "+esc(u.name)+"</h1>"+
+    "<div class='muted' style='margin-bottom:8px;'>خالی‌گذاشتن همه = دسترسی کامل</div>"+
+    all.map(m=>"<label style='display:flex;gap:8px;align-items:center;color:var(--txt);padding:6px 0;'>"+
+      "<input type='checkbox' style='width:auto;' class='mchk' value='"+m.code+"' "+
+      ((allowed===null||allowed.indexOf(m.code)>=0)?"checked":"")+"> "+esc(m.fa_name)+"</label>").join("")+
+    "<button class='btn' style='width:100%;margin-top:10px;' id='mS'>ذخیره</button>");
+  el("mS").onclick=async()=>{
+    const boxes=[...document.querySelectorAll(".mchk")];
+    const sel=boxes.filter(b=>b.checked).map(b=>b.value);
+    const codes = (sel.length===boxes.length) ? null : sel; // all checked = unrestricted
+    try{ await api("/admin/users/"+u.id+"/modes",{json:{codes:codes}});
+      closeSheet(); toast("✅ دسترسی موتورها ذخیره شد"); renderAdmin(); }
+    catch(e){ toast("خطا: "+e.message); }
+  };
 }
 
 function adjSheet(uid, name){

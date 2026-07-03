@@ -46,6 +46,8 @@ async def _run_mini_migrations(conn) -> None:
     wanted = {
         "users": {
             "default_mode": "ALTER TABLE users ADD COLUMN default_mode VARCHAR(64)",
+            "allowed_modes": "ALTER TABLE users ADD COLUMN allowed_modes JSON",
+            "effort_overrides": "ALTER TABLE users ADD COLUMN effort_overrides JSON",
         },
         "packages": {
             "price_toman": "ALTER TABLE packages ADD COLUMN price_toman INTEGER",

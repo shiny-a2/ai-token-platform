@@ -92,7 +92,11 @@ async def bootstrap(
             select(AIMode).where(AIMode.is_active.is_(True)).order_by(AIMode.sort_order)
         )
     ).scalars().all()
+    # per-user engine allowlist (None = all)
+    if user.allowed_modes is not None:
+        modes = [m for m in modes if m.code in user.allowed_modes]
     packages = await pay_svc.list_active_packages(db)
+    efforts = user.effort_overrides or {}
     return {
         "user": {
             "name": user.first_name or wu.first_name,
@@ -110,6 +114,13 @@ async def bootstrap(
                 "description_fa": m.description_fa,
                 "is_image": m.supports_image_output,
                 "requires_confirmation": m.requires_confirmation,
+                # effort is user-tunable on reasoning-capable text engines
+                "can_effort": bool(
+                    m.supports_text and not m.supports_image_output
+                    and m.model.startswith(("gpt-5", "o3", "o4"))
+                ),
+                "effort": efforts.get(m.code) or (m.reasoning_effort or "none"),
+                "default_effort": m.reasoning_effort or "none",
             }
             for m in modes
         ],
@@ -138,9 +149,41 @@ async def set_mode(
     if mode is None:
         raise HTTPException(404, "mode_not_found")
     user = await _db_user(db, wu)
+    if not chat_service.mode_allowed(user, mode.code):
+        raise HTTPException(403, "mode_not_allowed")
     user.default_mode = mode.code
     await db.commit()
     return {"ok": True, "default_mode": mode.code}
+
+
+class EffortBody(BaseModel):
+    code: str
+    effort: str  # none|low|medium|high|xhigh
+
+
+@router.post("/mode/effort")
+async def set_effort(
+    body: EffortBody, wu: WebAppUser = Depends(webapp_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """User picks how hard the engine should think — cost scales with it."""
+    effort = body.effort.strip().lower()
+    if effort not in ("none", "low", "medium", "high", "xhigh"):
+        raise HTTPException(422, "bad_effort")
+    mode = await chat_service.load_mode(db, body.code)
+    if mode is None:
+        raise HTTPException(404, "mode_not_found")
+    user = await _db_user(db, wu)
+    if not chat_service.mode_allowed(user, mode.code):
+        raise HTTPException(403, "mode_not_allowed")
+    overrides = dict(user.effort_overrides or {})
+    if effort == "none" or effort == (mode.reasoning_effort or "none"):
+        overrides.pop(mode.code, None)  # back to the mode default
+    else:
+        overrides[mode.code] = effort
+    user.effort_overrides = overrides
+    await db.commit()
+    return {"ok": True, "effort": effort}
 
 
 # ---------------- chats ----------------
@@ -323,6 +366,8 @@ async def chat_send(
     mode = await chat_service.load_mode(db, body.mode)
     if mode is None:
         raise HTTPException(404, "mode_not_found")
+    if not chat_service.mode_allowed(user, mode.code):
+        return {"ok": False, "error": "mode_not_allowed"}
 
     if mode.supports_image_output:
         return await _image_turn(db, user, mode, body)
@@ -783,6 +828,7 @@ async def admin_users(
             "remaining": b.remaining if b else 0,
             "total": b.total_tokens if b else 0,
             "expires_at": b.expires_at.strftime("%Y-%m-%d") if b and b.expires_at else None,
+            "allowed_modes": u.allowed_modes,  # None = all
         })
     return out
 
@@ -805,3 +851,156 @@ async def admin_adjust(
         set_expiry_days=(body.expiry_days if body.expiry_days >= 0 else None),
     )
     return {"ok": True, "remaining": bal.remaining, "total": bal.total_tokens}
+
+
+class CreateUserBody(BaseModel):
+    telegram_id: int
+    first_name: str = ""
+    credits: int = 0
+    expiry_days: int = 30
+
+
+@router.post("/admin/users/create")
+async def admin_create_user(
+    body: CreateUserBody, wu: WebAppUser = Depends(webapp_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    if body.telegram_id <= 0:
+        raise HTTPException(422, "bad_telegram_id")
+    existing = await users_svc.get_by_telegram_id(db, body.telegram_id)
+    if existing is not None:
+        raise HTTPException(409, "already_exists")
+    user = await users_svc.get_or_create(
+        db, body.telegram_id, first_name=(body.first_name or None)
+    )
+    if body.credits > 0:
+        await balance_svc.adjust(
+            db, user.id, delta_total=body.credits,
+            set_expiry_days=max(1, body.expiry_days),
+        )
+    return {"ok": True, "id": user.id}
+
+
+@router.post("/admin/users/{user_id}/delete")
+async def admin_delete_user(
+    user_id: str, wu: WebAppUser = Depends(webapp_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import Conversation, Message, UsageLog, UserBalance
+
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(404, "user_not_found")
+    if settings.is_admin(target.telegram_user_id):
+        raise HTTPException(403, "cannot_delete_admin")
+    # purge dependents first (SQLite has no cascade here)
+    await db.execute(sa_delete(Message).where(Message.user_id == user_id))
+    await db.execute(sa_delete(Conversation).where(Conversation.user_id == user_id))
+    await db.execute(sa_delete(UsageLog).where(UsageLog.user_id == user_id))
+    await db.execute(sa_delete(FileAsset).where(FileAsset.user_id == user_id))
+    await db.execute(sa_delete(PaymentReceipt).where(PaymentReceipt.user_id == user_id))
+    await db.execute(sa_delete(UserBalance).where(UserBalance.user_id == user_id))
+    await db.delete(target)
+    await db.commit()
+    return {"ok": True}
+
+
+class UserModesBody(BaseModel):
+    codes: list[str] | None = None  # None = all modes allowed
+
+
+@router.post("/admin/users/{user_id}/modes")
+async def admin_set_user_modes(
+    user_id: str, body: UserModesBody, wu: WebAppUser = Depends(webapp_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(404, "user_not_found")
+    if body.codes is None:
+        target.allowed_modes = None
+    else:
+        valid = {
+            m.code for m in (
+                await db.execute(select(AIMode))
+            ).scalars().all()
+        }
+        codes = [c for c in body.codes if c in valid]
+        target.allowed_modes = codes
+    await db.commit()
+    return {"ok": True, "allowed_modes": target.allowed_modes}
+
+
+@router.get("/admin/packages")
+async def admin_packages(
+    wu: WebAppUser = Depends(webapp_admin), db: AsyncSession = Depends(get_session)
+):
+    rows = (
+        await db.execute(select(Package).order_by(Package.sort_order))
+    ).scalars().all()
+    return [
+        {
+            "id": p.id, "name": p.name, "price_usd": p.price_usd,
+            "price_toman": p.price_toman, "ai_tokens": p.ai_tokens,
+            "validity_days": p.validity_days, "is_active": p.is_active,
+        }
+        for p in rows
+    ]
+
+
+class PackagePriceBody(BaseModel):
+    price_usd: float | None = None
+    price_toman: int | None = None
+    is_active: bool | None = None
+
+
+@router.post("/admin/packages/{pkg_id}/update")
+async def admin_update_package(
+    pkg_id: str, body: PackagePriceBody, wu: WebAppUser = Depends(webapp_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    pkg = await db.get(Package, pkg_id)
+    if pkg is None:
+        raise HTTPException(404, "package_not_found")
+    if body.price_usd is not None and body.price_usd >= 0:
+        pkg.price_usd = body.price_usd
+    if body.price_toman is not None:
+        pkg.price_toman = body.price_toman if body.price_toman > 0 else None
+    if body.is_active is not None:
+        pkg.is_active = body.is_active
+    await db.commit()
+    return {"ok": True}
+
+
+class BroadcastBody(BaseModel):
+    text: str
+
+
+@router.post("/admin/broadcast")
+async def admin_broadcast(
+    body: BroadcastBody, request: Request, wu: WebAppUser = Depends(webapp_admin),
+    db: AsyncSession = Depends(get_session),
+):
+    """Send a message to every registered user via the bot."""
+    import asyncio
+
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(422, "empty_text")
+    bot = getattr(request.app.state, "bot", None)
+    if bot is None:
+        raise HTTPException(503, "bot_offline")
+    rows = (
+        await db.execute(select(User).where(User.status == "active"))
+    ).scalars().all()
+    sent = failed = 0
+    for u in rows:
+        try:
+            await bot.send_message(u.telegram_user_id, text)
+            sent += 1
+        except Exception:  # noqa: BLE001
+            failed += 1
+        await asyncio.sleep(0.05)  # stay well under telegram rate limits
+    return {"ok": True, "sent": sent, "failed": failed}

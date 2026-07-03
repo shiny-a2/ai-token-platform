@@ -67,16 +67,23 @@ def _charge_for(
     )
 
 
+# reasoning-token estimate multipliers per effort level — costs scale
+# proportionally with the effort the user picks
+EFFORT_FACTORS = {"low": 0.8, "medium": 2.0, "high": 4.0, "xhigh": 6.5}
+
+
 def estimate(
     mode: AIMode,
     prompt_text: str,
     econ: Economics,
     *,
     context_tokens: int = 0,
+    effort_override: str | None = None,
 ) -> Estimate:
     prompt_tokens = count_tokens(prompt_text)
     est_in = prompt_tokens + context_tokens
-    is_reasoning = (mode.reasoning_effort or "").lower() in ("medium", "high", "xhigh")
+    effort = (effort_override or mode.reasoning_effort or "").lower()
+    is_reasoning = effort in ("medium", "high", "xhigh")
 
     est_out_low = max(64, int(est_in * 0.3))
     # Reasoning models legitimately produce page-long answers + hidden
@@ -86,9 +93,10 @@ def estimate(
     est_out_high = min(mode.max_output_tokens, max(floor_high, int(est_in * 1.5)))
 
     reason_low = reason_high = 0
-    if is_reasoning:
-        reason_low = int(est_out_low * 0.8)
-        reason_high = int(est_out_high * 2.0)
+    factor = EFFORT_FACTORS.get(effort, 0.0)
+    if factor:
+        reason_low = int(est_out_low * factor * 0.4)
+        reason_high = int(est_out_high * factor)
 
     lo = _charge_for(mode, econ, est_in, est_out_low, reason_low)
     hi = _charge_for(mode, econ, est_in, est_out_high, reason_high)

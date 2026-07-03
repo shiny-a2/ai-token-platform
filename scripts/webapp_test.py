@@ -215,6 +215,72 @@ def main() -> int:  # noqa: PLR0915
                json={"note": "تست"})
         print("crypto verify plumbing: ok (bogus txid stayed pending)")
 
+        # 16) effort override scales the estimate
+        c.post("/api/webapp/mode/effort", headers=user_h,
+               json={"code": "thinking", "effort": "low"})
+        low = c.post("/api/webapp/chat/estimate", headers=user_h,
+                     json={"text": "تحلیل کن " * 30, "mode": "thinking"}).json()
+        c.post("/api/webapp/mode/effort", headers=user_h,
+               json={"code": "thinking", "effort": "xhigh"})
+        xh = c.post("/api/webapp/chat/estimate", headers=user_h,
+                    json={"text": "تحلیل کن " * 30, "mode": "thinking"}).json()
+        assert xh["max"] > low["max"] * 2, f"effort must scale cost: {low['max']} vs {xh['max']}"
+        c.post("/api/webapp/mode/effort", headers=user_h,
+               json={"code": "thinking", "effort": "none"})
+        print(f"effort scaling: ok (low max={low['max']}, xhigh max={xh['max']})")
+
+        # 17) per-user mode restriction
+        r = c.post(f"/api/webapp/admin/users/{uid}/modes", headers=admin_h,
+                   json={"codes": ["fast_chat"]})
+        assert r.json()["allowed_modes"] == ["fast_chat"]
+        r = c.post("/api/webapp/chat/send", headers=user_h,
+                   json={"text": "سلام", "mode": "thinking"})
+        assert r.json().get("error") == "mode_not_allowed", r.text
+        r = c.get("/api/webapp/bootstrap", headers=user_h)
+        assert [m["code"] for m in r.json()["modes"]] == ["fast_chat"]
+        assert c.post("/api/webapp/mode", headers=user_h,
+                      json={"code": "thinking"}).status_code == 403
+        c.post(f"/api/webapp/admin/users/{uid}/modes", headers=admin_h,
+               json={"codes": None})
+        print("per-user mode restriction: ok")
+
+        # 18) package price edit (toman for users, usd for crypto)
+        r = c.post(f"/api/webapp/admin/packages/{pkg_id}/update", headers=admin_h,
+                   json={"price_toman": 750_000})
+        assert r.json()["ok"]
+        r = c.get("/api/webapp/bootstrap", headers=user_h)
+        pkg = next(p for p in r.json()["packages"] if p["id"] == pkg_id)
+        assert pkg["price_toman"] == 750_000
+        c.post(f"/api/webapp/admin/packages/{pkg_id}/update", headers=admin_h,
+               json={"price_toman": 0})
+        print("package price edit: ok")
+
+        # 19) admin create + delete user
+        new_tid = 111222333
+        r = c.post("/api/webapp/admin/users/create", headers=admin_h,
+                   json={"telegram_id": new_tid, "first_name": "مهمان",
+                         "credits": 5000})
+        assert r.json()["ok"], r.text
+        assert c.post("/api/webapp/admin/users/create", headers=admin_h,
+                      json={"telegram_id": new_tid}).status_code == 409
+        users2 = c.get("/api/webapp/admin/users", headers=admin_h).json()
+        nu = next(u for u in users2 if u["telegram_id"] == new_tid)
+        assert nu["remaining"] == 5000
+        r = c.post(f"/api/webapp/admin/users/{nu['id']}/delete", headers=admin_h,
+                   json={})
+        assert r.json()["ok"]
+        users3 = c.get("/api/webapp/admin/users", headers=admin_h).json()
+        assert not any(u["telegram_id"] == new_tid for u in users3)
+        print("admin create/delete user: ok")
+
+        # 20) broadcast requires the bot (offline in tests) -> 503
+        assert c.post("/api/webapp/admin/broadcast", headers=admin_h,
+                      json={"text": "سلام"}).status_code == 503
+        # and is admin-only
+        assert c.post("/api/webapp/admin/broadcast", headers=user_h,
+                      json={"text": "x"}).status_code == 403
+        print("broadcast gating: ok")
+
     print("ALL WEBAPP TESTS OK")
     return 0
 
