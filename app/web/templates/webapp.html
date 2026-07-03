@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>AI Token</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:#0a0a0c;--panel:#141418;--panel2:#1c1c22;--line:#2a2a33;--txt:#e8e8ee;
+--muted:#8b8b96;--red:#e11d3a;--red2:#ff415e;--green:#25c26e;--amber:#f2b01e;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;height:100%;}
+body{background:var(--bg);color:var(--txt);font-family:Vazirmatn,Tahoma,system-ui,sans-serif;
+font-size:14px;display:flex;flex-direction:column;overflow:hidden;}
+#view{flex:1;overflow-y:auto;padding:14px 14px 80px;}
+h1{font-size:17px;margin:2px 0 14px;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;}
+.muted{color:var(--muted);font-size:12px;}
+.btn{background:var(--red);color:#fff;border:none;border-radius:10px;padding:10px 16px;
+font-family:inherit;font-size:14px;cursor:pointer;}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--txt);}
+.btn.green{background:var(--green);}
+.btn.small{padding:6px 12px;font-size:12px;border-radius:8px;}
+.btn:disabled{opacity:.5;}
+input,textarea,select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+border-radius:10px;padding:10px;font-family:inherit;font-size:14px;width:100%;}
+textarea{resize:none;}
+.row{display:flex;gap:8px;align-items:center;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.pill{padding:2px 10px;border-radius:20px;font-size:11px;display:inline-block;}
+.pill.ok{background:rgba(37,194,110,.15);color:var(--green);}
+.pill.warn{background:rgba(242,176,30,.15);color:var(--amber);}
+.pill.bad{background:rgba(225,29,58,.15);color:var(--red2);}
+/* bottom nav */
+#nav{position:fixed;bottom:0;right:0;left:0;background:var(--panel);border-top:1px solid var(--line);
+display:flex;z-index:20;padding-bottom:env(safe-area-inset-bottom);}
+#nav button{flex:1;background:none;border:none;color:var(--muted);padding:9px 2px 7px;
+font-family:inherit;font-size:10px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;}
+#nav button.active{color:var(--red2);}
+#nav .ico{font-size:19px;}
+/* chat */
+#chatbox{display:flex;flex-direction:column;height:100%;}
+#msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-bottom:8px;}
+.msg{max-width:86%;padding:9px 12px;border-radius:14px;white-space:pre-wrap;word-break:break-word;line-height:1.7;}
+.msg.user{background:var(--red);color:#fff;align-self:flex-start;border-bottom-right-radius:4px;}
+.msg.assistant{background:var(--panel2);border:1px solid var(--line);align-self:flex-end;border-bottom-left-radius:4px;}
+.msg .meta{font-size:10px;opacity:.65;margin-top:5px;}
+.msg img{max-width:100%;border-radius:10px;display:block;}
+#composer{display:flex;gap:8px;align-items:flex-end;padding-top:8px;border-top:1px solid var(--line);}
+#composer textarea{flex:1;max-height:110px;}
+#modechip{font-size:11px;color:var(--red2);background:rgba(225,29,58,.12);border:1px solid rgba(225,29,58,.3);
+padding:4px 10px;border-radius:20px;cursor:pointer;white-space:nowrap;}
+/* modal */
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;z-index:40;align-items:flex-end;}
+#overlay.show{display:flex;}
+#sheet{background:var(--panel);border-radius:18px 18px 0 0;padding:18px;width:100%;border-top:1px solid var(--line);}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px;text-align:center;}
+.kpi .n{font-size:19px;font-weight:800;}
+.kpi .l{color:var(--muted);font-size:10px;margin-top:3px;}
+.list-item{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer;}
+.modecard{border:1px solid var(--line);border-radius:14px;padding:13px;margin-bottom:8px;cursor:pointer;background:var(--panel);}
+.modecard.sel{border-color:var(--red);background:rgba(225,29,58,.08);}
+.chip{display:inline-block;border:1px solid var(--line);border-radius:20px;padding:5px 12px;margin:0 0 6px 6px;
+cursor:pointer;font-size:12px;background:var(--panel2);}
+.chip.sel{border-color:var(--red);color:var(--red2);}
+#toast{position:fixed;top:14px;right:14px;left:14px;background:var(--panel2);border:1px solid var(--line);
+border-radius:12px;padding:11px 14px;z-index:60;display:none;text-align:center;}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:var(--red2);
+border-radius:50%;animation:sp 0.8s linear infinite;vertical-align:middle;}
+@keyframes sp{to{transform:rotate(360deg)}}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th,td{text-align:right;padding:7px 5px;border-bottom:1px solid var(--line);}
+th{color:var(--muted);font-weight:600;font-size:11px;}
+</style>
+</head>
+<body>
+<div id="toast"></div>
+<div id="view"></div>
+<div id="nav"></div>
+<div id="overlay"><div id="sheet"></div></div>
+
+<script>
+"use strict";
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const INIT = tg && tg.initData ? tg.initData : "";
+let S = { boot:null, tab:"chat", conv:null, convTitle:"", msgs:[], mode:"fast_chat",
+          imgSize:"1024x1024", pkg:null, busy:false };
+
+function el(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,
+  c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function toast(msg, ms){ const t=el("toast"); t.textContent=msg; t.style.display="block";
+  clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none", ms||2600); }
+function sheet(html){ el("sheet").innerHTML=html; el("overlay").classList.add("show"); }
+function closeSheet(){ el("overlay").classList.remove("show"); }
+el("overlay").addEventListener("click", e=>{ if(e.target.id==="overlay") closeSheet(); });
+
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({"X-Init-Data": INIT}, opts.headers||{});
+  if(opts.json !== undefined){
+    opts.method = opts.method||"POST";
+    opts.headers["Content-Type"]="application/json";
+    opts.body = JSON.stringify(opts.json);
+  }
+  const r = await fetch("/api/webapp"+path, opts);
+  if(r.status===401){ throw new Error("auth"); }
+  if(!r.ok){ let d=""; try{ const j=await r.json();
+      d = typeof j.detail==="string" ? j.detail : JSON.stringify(j.detail||""); }catch(e){}
+    throw new Error(d||("http_"+r.status)); }
+  return r.json();
+}
+
+function modeOf(code){ return (S.boot.modes||[]).find(m=>m.code===code) || null; }
+function modeName(code){ const m=modeOf(code); return m? m.fa_name : code; }
+
+/* ---------------- boot ---------------- */
+async function boot(){
+  if(!INIT){
+    el("view").innerHTML = "<div class='card' style='margin-top:40vh;text-align:center;'>"+
+      "لطفاً این صفحه را از داخل تلگرام و با دکمهٔ منوی ربات باز کنید.</div>";
+    return;
+  }
+  if(tg){ tg.ready(); tg.expand(); tg.setHeaderColor("#0a0a0c"); tg.setBackgroundColor("#0a0a0c"); }
+  try{
+    S.boot = await api("/bootstrap");
+    S.mode = S.boot.user.default_mode || "fast_chat";
+    renderNav(); show("chat");
+  }catch(e){
+    el("view").innerHTML = "<div class='card' style='margin-top:40vh;text-align:center;'>"+
+      "خطا در اتصال. دوباره باز کنید.<div class='muted'>"+esc(e.message)+"</div></div>";
+  }
+}
+
+function renderNav(){
+  const tabs = [
+    ["chat","💬","چت"],["modes","🧠","موتور"],["recharge","💳","شارژ"],
+    ["usage","📊","مصرف"],["settings","⚙️","تنظیمات"],
+  ];
+  if(S.boot.user.is_admin) tabs.push(["admin","🛡","ادمین"]);
+  el("nav").innerHTML = tabs.map(t=>
+    "<button data-t="+t[0]+" class='"+(S.tab===t[0]?"active":"")+"'>"+
+    "<span class='ico'>"+t[1]+"</span>"+t[2]+"</button>").join("");
+  el("nav").querySelectorAll("button").forEach(b=>
+    b.onclick=()=>show(b.dataset.t));
+}
+
+function show(tab){
+  S.tab=tab; renderNav();
+  if(tab==="chat") return S.conv===null ? renderChatList() : renderChat();
+  if(tab==="modes") return renderModes();
+  if(tab==="recharge") return renderRecharge();
+  if(tab==="usage") return renderUsage();
+  if(tab==="settings") return renderSettings();
+  if(tab==="admin") return renderAdmin();
+}
+
+/* ---------------- chat list ---------------- */
+async function renderChatList(){
+  S.conv=null;
+  const b=S.boot.balance;
+  el("view").innerHTML =
+    "<h1>💬 چت‌ها</h1>"+
+    "<div class='card row' style='justify-content:space-between;'>"+
+      "<div>موجودی: <b>"+b.remaining+"</b> <span class='muted'>اعتبار</span></div>"+
+      "<button class='btn small' id='newchat'>＋ چت جدید</button></div>"+
+    "<div id='chats' class='card'><div class='muted'>در حال بارگذاری…</div></div>";
+  el("newchat").onclick=()=>{ S.conv=""; S.convTitle="چت جدید"; S.msgs=[]; renderChat(); };
+  try{
+    const list = await api("/chats");
+    el("chats").innerHTML = list.length ? list.map(c=>
+      "<div class='list-item' data-id='"+c.id+"'><div><div>"+esc(c.title)+"</div>"+
+      "<div class='muted'>"+esc(modeName(c.mode))+" · "+c.updated_at+"</div></div><div>‹</div></div>"
+    ).join("") : "<div class='muted'>هنوز چتی ندارید. «چت جدید» را بزنید.</div>";
+    el("chats").querySelectorAll(".list-item").forEach(it=>
+      it.onclick=()=>openConv(it.dataset.id));
+  }catch(e){ el("chats").innerHTML="<div class='muted'>خطا در بارگذاری.</div>"; }
+}
+
+async function openConv(id){
+  try{
+    const d = await api("/chats/"+id+"/messages");
+    S.conv=d.id; S.convTitle=d.title||"چت"; S.msgs=d.messages;
+    if(d.mode && modeOf(d.mode)) S.mode=d.mode;
+    renderChat();
+  }catch(e){ toast("خطا در باز کردن چت"); }
+}
+
+/* ---------------- chat screen ---------------- */
+function renderChat(){
+  const m = modeOf(S.mode);
+  const isImg = m && m.is_image;
+  el("view").innerHTML =
+    "<div id='chatbox'>"+
+    "<div class='row' style='justify-content:space-between;margin-bottom:8px;'>"+
+      "<button class='btn ghost small' id='back'>‹ چت‌ها</button>"+
+      "<span id='modechip'>"+esc(modeName(S.mode))+"</span></div>"+
+    (isImg?imgSizeChips():"")+
+    "<div id='msgs'></div>"+
+    "<div id='composer'>"+
+      "<textarea id='txt' rows='1' placeholder='"+(isImg?"تصویر موردنظر را توصیف کنید…":"پیام خود را بنویسید…")+"'></textarea>"+
+      "<button class='btn' id='send'>↥</button></div>"+
+    "</div>";
+  el("back").onclick=()=>renderChatList();
+  el("modechip").onclick=()=>show("modes");
+  const ta=el("txt");
+  ta.addEventListener("input",()=>{ ta.style.height="auto"; ta.style.height=Math.min(110,ta.scrollHeight)+"px"; });
+  el("send").onclick=sendFlow;
+  drawMsgs();
+  if(isImg){ document.querySelectorAll(".imchip").forEach(c=>c.onclick=()=>{
+    S.imgSize=c.dataset.s; renderChat(); }); }
+}
+
+function imgSizeChips(){
+  const opts=[["1024x1024","⬛️ ۱:۱"],["1024x1536","📱 ۹:۱۶"],["1536x1024","🖥 ۱۶:۹"]];
+  return "<div style='margin-bottom:6px;'>"+opts.map(o=>
+    "<span class='chip imchip "+(S.imgSize===o[0]?"sel":"")+"' data-s='"+o[0]+"'>"+o[1]+"</span>").join("")+"</div>";
+}
+
+function drawMsgs(){
+  const box=el("msgs");
+  box.innerHTML = S.msgs.length ? S.msgs.map(m=>{
+    let inner = m.image_b64 ?
+      "<img src='data:image/png;base64,"+m.image_b64+"'>" : esc(m.content);
+    let meta = (m.charged? "کسر: "+m.charged+" اعتبار" : "");
+    return "<div class='msg "+(m.role==="user"?"user":"assistant")+"'>"+inner+
+      (meta?"<div class='meta'>"+meta+"</div>":"")+"</div>";
+  }).join("") : "<div class='muted' style='text-align:center;margin-top:30px;'>موتور: "+
+      esc(modeName(S.mode))+"<br>اولین پیام را بفرستید.</div>";
+  box.scrollTop = box.scrollHeight;
+}
+
+function pushMsg(m){ S.msgs.push(m); drawMsgs(); }
+
+async function sendFlow(){
+  if(S.busy) return;
+  const ta=el("txt"); const text=ta.value.trim();
+  if(!text) return;
+  const m=modeOf(S.mode);
+  try{
+    const est = await api("/chat/estimate",{json:{text:text, mode:S.mode,
+      conv_id:S.conv||null, size:S.imgSize, quality:"medium"}});
+    if(est.balance < est.min && !S.boot.user.unrestricted){
+      return sheet("<h1>اعتبار کافی نیست</h1><div class='muted'>موجودی: "+est.balance+
+        " — هزینه تقریبی: "+est.min+" تا "+est.max+" اعتبار</div>"+
+        "<button class='btn' style='width:100%;margin-top:14px;' onclick='closeSheet();show(\"recharge\")'>شارژ حساب</button>");
+    }
+    if(est.confirm){
+      const costLine = (est.min===est.max) ?
+        ("هزینه: <b>"+est.max+"</b> اعتبار<br>") :
+        ("طول پیام: ~"+est.in_tokens+" توکن<br>هزینه تقریبی: <b>"+est.min+" تا "+est.max+"</b> اعتبار<br>");
+      sheet("<h1>تایید مصرف</h1>"+
+        "<div class='card'>موتور: <b>"+esc(modeName(S.mode))+"</b><br>"+
+        costLine+
+        "موجودی: "+est.balance+" اعتبار</div>"+
+        "<div class='row'><button class='btn' style='flex:1' id='okS'>ارسال</button>"+
+        "<button class='btn ghost' style='flex:1' id='noS'>لغو</button></div>");
+      el("okS").onclick=async()=>{ closeSheet(); await doSend(text, est.max); };
+      el("noS").onclick=closeSheet;
+      return;
+    }
+    await doSend(text, est.max);
+  }catch(e){ toast("خطا: "+e.message); }
+}
+
+async function doSend(text, cap){
+  const ta=el("txt"); ta.value=""; ta.style.height="auto";
+  S.busy=true;
+  pushMsg({role:"user", content:text});
+  pushMsg({role:"assistant", content:"⏳ در حال پردازش…", _tmp:true});
+  el("send").disabled=true;
+  try{
+    const m=modeOf(S.mode);
+    const body={text:text, mode:S.mode, conv_id:S.conv||null, cap:cap,
+                size:S.imgSize, quality:"medium"};
+    const r = await api("/chat/send",{json:body});
+    S.msgs = S.msgs.filter(x=>!x._tmp);
+    if(!r.ok){
+      const msgs={expired:"اعتبار شما منقضی شده. لطفاً شارژ کنید.",
+        insufficient:"اعتبار کافی نیست (نیاز: "+(r.needed||"?")+"، موجودی: "+(r.balance||0)+").",
+        openai:"ارتباط با هوش مصنوعی برقرار نشد. اعتباری کسر نشد."};
+      pushMsg({role:"assistant", content:(msgs[r.error]||"خطایی رخ داد.")});
+    }else{
+      if(r.conv_id) S.conv=r.conv_id;
+      if(r.image_b64) pushMsg({role:"assistant", image_b64:r.image_b64, charged:r.charged});
+      else pushMsg({role:"assistant", content:r.reply, charged:r.charged});
+      S.boot.balance.remaining = r.remaining;
+    }
+  }catch(e){
+    S.msgs = S.msgs.filter(x=>!x._tmp);
+    pushMsg({role:"assistant", content:"خطا در ارسال. دوباره تلاش کنید."});
+  }
+  S.busy=false; el("send").disabled=false;
+}
+
+/* ---------------- modes ---------------- */
+function renderModes(){
+  el("view").innerHTML = "<h1>🧠 انتخاب موتور</h1>"+
+    S.boot.modes.map(m=>
+      "<div class='modecard "+(S.mode===m.code?"sel":"")+"' data-c='"+m.code+"'>"+
+      "<div style='font-weight:700;'>"+esc(m.fa_name)+"</div>"+
+      "<div class='muted' style='margin-top:4px;'>"+esc(m.description_fa||"")+"</div>"+
+      (m.requires_confirmation?"<div class='pill warn' style='margin-top:6px;'>با تایید مصرف</div>":"")+
+      "</div>").join("");
+  document.querySelectorAll(".modecard").forEach(c=>c.onclick=async()=>{
+    try{
+      const r=await api("/mode",{json:{code:c.dataset.c}});
+      S.mode=r.default_mode; S.boot.user.default_mode=r.default_mode;
+      toast("موتور فعال: "+modeName(S.mode));
+      renderModes();
+    }catch(e){ toast("خطا در تغییر موتور"); }
+  });
+}
+
+/* ---------------- recharge ---------------- */
+function pkgPrice(p){
+  if(p.price_toman) return p.price_toman.toLocaleString("fa")+" تومان";
+  return p.price_usd+"$";
+}
+function renderRecharge(){
+  const b=S.boot.balance;
+  el("view").innerHTML = "<h1>💳 شارژ حساب</h1>"+
+    "<div class='card'>موجودی فعلی: <b>"+b.remaining+"</b> اعتبار"+
+    (b.expires_at?"<div class='muted'>اعتبار تا: "+b.expires_at+"</div>":"")+"</div>"+
+    "<h1 style='font-size:14px;'>انتخاب پکیج</h1>"+
+    (S.boot.packages.length ? S.boot.packages.map(p=>
+      "<div class='modecard' data-p='"+p.id+"'>"+
+      "<div class='row' style='justify-content:space-between;'>"+
+      "<b>"+esc(p.name)+"</b><b style='color:var(--red2)'>"+pkgPrice(p)+"</b></div>"+
+      "<div class='muted' style='margin-top:4px;'>"+p.ai_tokens.toLocaleString("fa")+" اعتبار · "+
+      p.validity_days+" روز"+(p.description?" · "+esc(p.description):"")+"</div></div>").join("")
+    : "<div class='card muted'>پکیجی تعریف نشده است.</div>");
+  document.querySelectorAll("[data-p]").forEach(c=>c.onclick=()=>openPackage(c.dataset.p));
+}
+
+async function openPackage(pid){
+  S.pkg = S.boot.packages.find(p=>p.id===pid);
+  let methods=[];
+  try{ methods = await api("/payment-methods"); }catch(e){}
+  const mHtml = methods.length ? methods.map(m=>
+    "<div class='card' style='margin-bottom:6px;'><b>"+esc(m.display_name)+"</b>"+
+    (m.network?" <span class='muted'>("+esc(m.network)+")</span>":"")+
+    "<div style='direction:ltr;text-align:left;margin-top:5px;user-select:all;'>"+esc(m.value)+"</div></div>").join("")
+    : "<div class='muted'>روش پرداختی تنظیم نشده — به پشتیبانی پیام دهید.</div>";
+  sheet("<h1>"+esc(S.pkg.name)+" — "+pkgPrice(S.pkg)+"</h1>"+
+    "<div class='muted' style='margin-bottom:8px;'>پس از پرداخت، رسید یا کد تراکنش را همین‌جا ثبت کنید.</div>"+
+    mHtml+
+    "<label class='muted'>کد تراکنش (اختیاری اگر عکس می‌فرستید)</label>"+
+    "<input id='txid' placeholder='TxID…' style='margin:6px 0;'>"+
+    "<label class='muted'>عکس رسید</label>"+
+    "<input id='rphoto' type='file' accept='image/*' style='margin:6px 0;'>"+
+    "<button class='btn' style='width:100%;margin-top:10px;' id='subR'>ثبت رسید</button>");
+  el("subR").onclick=submitReceipt;
+}
+
+async function submitReceipt(){
+  const txid = el("txid").value.trim();
+  const f = el("rphoto").files[0];
+  if(!txid && !f) return toast("کد تراکنش یا عکس رسید لازم است.");
+  const fd = new FormData();
+  fd.append("package_id", S.pkg.id);
+  fd.append("txid", txid);
+  if(f) fd.append("photo", f);
+  el("subR").disabled=true; el("subR").innerHTML="<span class='spin'></span>";
+  try{
+    await fetch("/api/webapp/receipt", {method:"POST", headers:{"X-Init-Data":INIT}, body:fd})
+      .then(r=>{ if(!r.ok) throw new Error("http_"+r.status); return r.json(); });
+    closeSheet();
+    toast("✅ رسید ثبت شد و برای ادمین ارسال شد. پس از تایید، اعتبار اضافه می‌شود.", 4000);
+  }catch(e){ toast("خطا در ثبت رسید"); el("subR").disabled=false; el("subR").textContent="ثبت رسید"; }
+}
+
+/* ---------------- usage ---------------- */
+async function renderUsage(){
+  el("view").innerHTML="<h1>📊 مصرف من</h1><div class='muted'>در حال بارگذاری…</div>";
+  try{
+    const u = await api("/usage");
+    S.boot.balance = u.balance;
+    el("view").innerHTML = "<h1>📊 مصرف من</h1>"+
+      "<div class='grid2'>"+
+      "<div class='kpi'><div class='n'>"+u.balance.total+"</div><div class='l'>کل اعتبار</div></div>"+
+      "<div class='kpi'><div class='n'>"+u.balance.used+"</div><div class='l'>مصرف‌شده</div></div>"+
+      "<div class='kpi'><div class='n' style='color:var(--green)'>"+u.balance.remaining+"</div><div class='l'>باقی‌مانده</div></div>"+
+      "<div class='kpi'><div class='n' style='font-size:13px;'>"+(u.balance.expires_at||"—")+"</div><div class='l'>اعتبار تا</div></div></div>"+
+      "<h1 style='font-size:14px;margin-top:14px;'>مصرف بر اساس موتور</h1>"+
+      "<div class='card'>"+(u.per_mode.length ? u.per_mode.map(p=>
+        "<div class='row' style='justify-content:space-between;padding:5px 0;'>"+
+        "<span>"+esc(modeName(p.mode))+"</span><span><b>"+p.charged+"</b> اعتبار · "+p.count+" درخواست</span></div>").join("")
+        : "<span class='muted'>هنوز مصرفی ندارید.</span>")+"</div>"+
+      "<h1 style='font-size:14px;'>آخرین درخواست‌ها</h1>"+
+      "<div class='card' style='overflow-x:auto;'><table><tr><th>زمان</th><th>موتور</th><th>ورودی</th><th>خروجی</th><th>اعتبار</th></tr>"+
+      u.recent.map(r=>"<tr><td class='muted'>"+r.at+"</td><td>"+esc(r.mode||"")+"</td><td>"+r.in+
+        "</td><td>"+r.out+"</td><td>"+(r.status==="ok"? r.charged : "<span class='pill bad'>خطا</span>")+"</td></tr>").join("")+
+      "</table></div>";
+  }catch(e){ el("view").innerHTML="<h1>📊 مصرف من</h1><div class='card muted'>خطا در بارگذاری.</div>"; }
+}
+
+/* ---------------- settings ---------------- */
+function renderSettings(){
+  const u=S.boot.user;
+  el("view").innerHTML = "<h1>⚙️ تنظیمات</h1>"+
+    "<div class='card row' style='justify-content:space-between;'>"+
+      "<div>زبان ربات</div>"+
+      "<select id='lang' style='width:130px;'><option value='fa' "+(u.language==="fa"?"selected":"")+">فارسی</option>"+
+      "<option value='en' "+(u.language==="en"?"selected":"")+">English</option></select></div>"+
+    (u.is_admin ?
+      "<div class='card row' style='justify-content:space-between;'>"+
+      "<div>مصرف آزاد <div class='muted'>ویژه ادمین — بدون سقف تایید مصرف</div></div>"+
+      "<button class='btn small "+(u.unrestricted?"":"ghost")+"' id='unr'>"+(u.unrestricted?"روشن":"خاموش")+"</button></div>"
+      : "")+
+    "<div class='card'><div style='margin-bottom:8px;'>🆘 پیام به پشتیبانی</div>"+
+      "<textarea id='sup' rows='3' placeholder='سوال یا مشکل خود را بنویسید…'></textarea>"+
+      "<button class='btn' style='margin-top:8px;' id='supS'>ارسال</button></div>";
+  el("lang").onchange=async e=>{
+    try{ const r=await api("/settings",{json:{language:e.target.value}});
+      S.boot.user.language=r.language; toast("ذخیره شد"); }catch(_){ toast("خطا"); } };
+  if(el("unr")) el("unr").onclick=async ()=>{
+    try{ const r=await api("/settings",{json:{unrestricted:!S.boot.user.unrestricted}});
+      S.boot.user.unrestricted=r.unrestricted; renderSettings(); }catch(_){ toast("خطا"); } };
+  el("supS").onclick=async ()=>{
+    const v=el("sup").value.trim(); if(!v) return;
+    try{ const r=await api("/support",{json:{text:v}});
+      if(r.ok){ el("sup").value=""; toast("✅ پیام شما ارسال شد"); }
+      else toast("ارسال ناموفق بود؛ بعداً تلاش کنید."); }
+    catch(_){ toast("خطا در ارسال"); } };
+}
+
+/* ---------------- admin ---------------- */
+async function renderAdmin(){
+  el("view").innerHTML="<h1>🛡 پنل ادمین</h1><div class='muted'>در حال بارگذاری…</div>";
+  try{
+    const d = await api("/admin/overview");
+    const k = d.kpis;
+    S.adminEcon = d.econ || null;
+    el("view").innerHTML = "<h1>🛡 پنل ادمین</h1>"+
+      "<div class='grid2'>"+
+      "<div class='kpi'><div class='n'>$"+k.today_cost+"</div><div class='l'>هزینه امروز</div></div>"+
+      "<div class='kpi'><div class='n'>$"+k.month_cost+"</div><div class='l'>هزینه ۳۰ روز</div></div>"+
+      "<div class='kpi'><div class='n'>$"+k.revenue+"</div><div class='l'>درآمد</div></div>"+
+      "<div class='kpi'><div class='n' style='color:var(--green)'>$"+k.profit+"</div><div class='l'>سود تقریبی</div></div>"+
+      "<div class='kpi'><div class='n'>"+k.total_users+"</div><div class='l'>کل کاربران</div></div>"+
+      "<div class='kpi'><div class='n' style='color:var(--amber)'>"+k.pending_receipts+"</div><div class='l'>رسید در انتظار</div></div></div>"+
+      "<h1 style='font-size:14px;margin-top:14px;'>🧾 رسیدهای در انتظار</h1>"+
+      "<div id='prc'>"+(d.pending.length ? d.pending.map(r=>
+        "<div class='card'><div class='row' style='justify-content:space-between;'>"+
+        "<div><b>"+esc(r.user)+"</b> <span class='muted'>"+(r.telegram_id||"")+"</span>"+
+        "<div class='muted'>"+esc(r.package)+" · "+(r.amount||"?")+"$ · "+r.at+
+        (r.txid?"<br>TxID: <span style='direction:ltr'>"+esc(r.txid)+"</span>":"")+"</div></div>"+
+        "<div style='display:flex;flex-direction:column;gap:6px;'>"+
+        "<button class='btn green small' data-ok='"+r.id+"'>تایید</button>"+
+        "<button class='btn small' data-no='"+r.id+"'>رد</button></div></div></div>").join("")
+        : "<div class='card muted'>رسیدی در انتظار نیست. ✅</div>")+"</div>"+
+      "<h1 style='font-size:14px;'>👥 کاربران</h1><div id='ulist' class='card muted'>در حال بارگذاری…</div>"+
+      "<div style='margin-top:10px;'><button class='btn ghost small' id='dash'>🖥 داشبورد کامل وب</button></div>";
+    document.querySelectorAll("[data-ok]").forEach(b=>b.onclick=async()=>{
+      try{ const r=await api("/admin/receipts/"+b.dataset.ok+"/approve",{json:{}});
+        toast("✅ تایید شد — "+r.added+" اعتبار اضافه شد"); renderAdmin(); }
+      catch(e){ toast("خطا: "+e.message); }});
+    document.querySelectorAll("[data-no]").forEach(b=>b.onclick=async()=>{
+      try{ await api("/admin/receipts/"+b.dataset.no+"/reject",{json:{note:""}});
+        toast("رد شد"); renderAdmin(); }catch(e){ toast("خطا"); }});
+    el("dash").onclick=()=>{ if(tg) tg.openLink(location.origin+"/admin"); };
+    const us = await api("/admin/users");
+    el("ulist").classList.remove("muted");
+    el("ulist").innerHTML = "<table><tr><th>نام</th><th>آیدی</th><th>باقی‌مانده</th><th></th></tr>"+
+      us.map(u=>"<tr><td>"+esc(u.name)+"</td><td class='muted'>"+u.telegram_id+"</td>"+
+      "<td>"+u.remaining+"</td><td><button class='btn ghost small' data-adj='"+u.id+"' data-n='"+esc(u.name)+"'>اعتبار</button></td></tr>").join("")+"</table>";
+    document.querySelectorAll("[data-adj]").forEach(b=>b.onclick=()=>adjSheet(b.dataset.adj, b.dataset.n));
+  }catch(e){
+    el("view").innerHTML="<h1>🛡 پنل ادمین</h1><div class='card muted'>خطا: "+esc(e.message)+"</div>";
+  }
+}
+
+function adjSheet(uid, name){
+  const hint = S.adminEcon ?
+    "<div class='muted' style='margin-bottom:6px;'>💡 هر ۱۰٬۰۰۰ اعتبار ≈ "+
+    S.adminEcon.cost_per_10k_usd+"$ هزینه واقعی OpenAI برای شما</div>" : "";
+  sheet("<h1>اعتبار: "+esc(name)+"</h1>"+hint+
+    "<label class='muted'>تغییر اعتبار (+ یا -)</label>"+
+    "<input id='adjV' type='number' value='10000' style='margin:6px 0;'>"+
+    "<label class='muted'>تمدید انقضا (روز از امروز — خالی یعنی بدون تغییر)</label>"+
+    "<input id='adjE' type='number' placeholder='مثلاً 30' style='margin:6px 0;'>"+
+    "<button class='btn' style='width:100%;margin-top:10px;' id='adjS'>اعمال</button>");
+  el("adjS").onclick=async()=>{
+    const dv=parseInt(el("adjV").value||"0",10);
+    const de=el("adjE").value===""? -1 : parseInt(el("adjE").value,10);
+    try{
+      const r=await api("/admin/users/"+uid+"/adjust",{json:{delta_total:dv, expiry_days:de}});
+      closeSheet(); toast("✅ انجام شد — باقی‌مانده: "+r.remaining); renderAdmin();
+    }catch(e){ toast("خطا: "+e.message); }
+  };
+}
+
+boot();
+</script>
+</body>
+</html>

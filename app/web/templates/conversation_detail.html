@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="toolbar">
+  <h1>💬 {{ conv.title or 'گفتگو' }}</h1>
+  <a class="btn ghost small" href="/admin/conversations">بازگشت</a>
+</div>
+<div class="card">
+  {% for m in msgs %}
+  <div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line);">
+    <div class="muted" style="font-size:11px;margin-bottom:4px;">
+      {{ '👤 کاربر' if m.role=='user' else '🤖 دستیار' }} · {{ m.created_at.strftime('%Y-%m-%d %H:%M') }}
+      {% if m.charged_ai_tokens %}· {{ m.charged_ai_tokens }} اعتبار{% endif %}
+    </div>
+    <div style="white-space:pre-wrap;">{{ m.content }}</div>
+  </div>
+  {% else %}<p class="muted">پیامی نیست.</p>{% endfor %}
+</div>
+{% endblock %}

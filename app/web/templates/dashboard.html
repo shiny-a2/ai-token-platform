@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>📊 داشبورد</h1>
+<div class="grid">
+  <div class="card kpi"><div class="n">${{ kpis.today_cost }}</div><div class="l">هزینه API امروز</div></div>
+  <div class="card kpi"><div class="n">${{ kpis.month_cost }}</div><div class="l">هزینه API ۳۰ روز</div></div>
+  <div class="card kpi"><div class="n">${{ kpis.revenue }}</div><div class="l">درآمد کل</div></div>
+  <div class="card kpi"><div class="n" style="color:var(--green)">${{ kpis.profit }}</div><div class="l">سود تقریبی</div></div>
+  <div class="card kpi"><div class="n">{{ kpis.active_users }}</div><div class="l">کاربران فعال (۳۰ روز)</div></div>
+  <div class="card kpi"><div class="n">{{ kpis.total_users }}</div><div class="l">کل کاربران</div></div>
+  <div class="card kpi"><div class="n" style="color:var(--amber)">{{ kpis.pending_receipts }}</div><div class="l">رسیدهای در انتظار</div></div>
+  <div class="card kpi"><div class="n" style="color:var(--red2)">{{ kpis.failed_requests }}</div><div class="l">درخواست‌های ناموفق</div></div>
+</div>
+
+<h2>پرمصرف‌ترین کاربران</h2>
+<table>
+  <tr><th>کاربر</th><th>اعتبار مصرفی</th><th>هزینه واقعی ($)</th></tr>
+  {% for u in top %}
+  <tr><td>{{ u.name }}</td><td>{{ u.credits }}</td><td>${{ u.cost }}</td></tr>
+  {% else %}
+  <tr><td colspan="3" class="muted">داده‌ای نیست.</td></tr>
+  {% endfor %}
+</table>
+
+<h2>پرهزینه‌ترین موتورها</h2>
+<table>
+  <tr><th>موتور</th><th>هزینه واقعی ($)</th><th>تعداد درخواست</th></tr>
+  {% for m in kpis.top_modes %}
+  <tr><td>{{ m.mode or '—' }}</td><td>${{ '%.4f'|format(m.cost or 0) }}</td><td>{{ m.n }}</td></tr>
+  {% else %}
+  <tr><td colspan="3" class="muted">داده‌ای نیست.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

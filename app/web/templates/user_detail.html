@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="toolbar">
+  <h1>👤 {{ user.first_name or '—' }} <span class="muted">({{ user.telegram_user_id }})</span></h1>
+  <a class="btn ghost small" href="/admin/users">بازگشت</a>
+</div>
+
+<div class="grid">
+  <div class="card kpi"><div class="n">{{ bal.total_tokens if bal else 0 }}</div><div class="l">کل اعتبار</div></div>
+  <div class="card kpi"><div class="n">{{ bal.used_tokens if bal else 0 }}</div><div class="l">مصرف‌شده</div></div>
+  <div class="card kpi"><div class="n" style="color:var(--green)">{{ bal.remaining if bal else 0 }}</div><div class="l">باقی‌مانده</div></div>
+  <div class="card kpi"><div class="n" style="font-size:16px">{{ bal.expires_at.strftime('%Y-%m-%d') if bal and bal.expires_at else '—' }}</div><div class="l">انقضا</div></div>
+</div>
+
+<h2>تنظیم دستی اعتبار</h2>
+<p class="muted">💡 هر ۱۰٬۰۰۰ اعتبار ≈ ${{ cost_per_10k }} هزینه واقعی OpenAI برای شما (در صورت مصرف کامل).</p>
+<form method="post" action="/admin/users/{{ user.id }}/adjust" class="card">
+  <div class="row">
+    <div><label>تغییر اعتبار کل (+ یا -)</label><input type="number" name="delta_total" value="0"></div>
+    <div><label>تنظیم انقضا (روز از امروز، -1 یعنی بدون تغییر)</label><input type="number" name="expiry_days" value="-1"></div>
+    <div style="display:flex;align-items:flex-end;"><button class="btn">اعمال</button></div>
+  </div>
+</form>
+
+<h2>گفتگوها</h2>
+<table>
+  <tr><th>عنوان</th><th>موتور</th><th>به‌روزرسانی</th><th></th></tr>
+  {% for c in convs %}
+  <tr><td>{{ c.title or '—' }}</td><td class="muted">{{ c.current_mode }}</td>
+      <td class="muted">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td><a class="btn ghost small" href="/admin/conversations/{{ c.id }}">مشاهده</a></td></tr>
+  {% else %}<tr><td colspan="4" class="muted">گفتگویی نیست.</td></tr>{% endfor %}
+</table>
+
+<h2>آخرین مصرف</h2>
+<table>
+  <tr><th>تاریخ</th><th>موتور</th><th>ورودی</th><th>خروجی</th><th>هزینه ($)</th><th>اعتبار</th><th>وضعیت</th></tr>
+  {% for l in logs %}
+  <tr><td class="muted">{{ l.created_at.strftime('%m-%d %H:%M') }}</td><td>{{ l.mode }}</td>
+      <td>{{ l.input_tokens }}</td><td>{{ l.output_tokens }}</td>
+      <td class="muted">${{ '%.5f'|format(l.api_cost_usd) }}</td><td>{{ l.charged_ai_tokens }}</td>
+      <td>{% if l.status=='ok' %}<span class="pill ok">ok</span>{% else %}<span class="pill bad">{{ l.status }}</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">مصرفی نیست.</td></tr>{% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_name }} — پنل مدیریت</title>
+  <style>
+    :root{ --bg:#0a0a0c; --panel:#141418; --panel2:#1c1c22; --line:#2a2a33;
+           --txt:#e8e8ee; --muted:#8b8b96; --red:#e11d3a; --red2:#ff415e;
+           --green:#25c26e; --amber:#f2b01e; }
+    *{ box-sizing:border-box; }
+    body{ margin:0; background:var(--bg); color:var(--txt);
+          font-family:"Vazirmatn",Tahoma,system-ui,-apple-system,sans-serif; font-size:14px; }
+    a{ color:inherit; text-decoration:none; }
+    .layout{ display:flex; min-height:100vh; }
+    .side{ width:220px; background:var(--panel); border-left:1px solid var(--line);
+           padding:18px 0; position:sticky; top:0; height:100vh; }
+    .brand{ font-weight:800; font-size:16px; padding:0 20px 16px; color:var(--red2);
+            letter-spacing:.5px; }
+    .nav a{ display:block; padding:11px 20px; color:var(--muted); border-right:3px solid transparent; }
+    .nav a:hover{ background:var(--panel2); color:var(--txt); }
+    .nav a.active{ color:#fff; border-right-color:var(--red); background:var(--panel2); }
+    .main{ flex:1; padding:26px 30px; }
+    h1{ font-size:20px; margin:0 0 18px; }
+    h2{ font-size:16px; margin:22px 0 10px; }
+    .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; }
+    .card{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+    .kpi .n{ font-size:26px; font-weight:800; }
+    .kpi .l{ color:var(--muted); margin-top:4px; font-size:12px; }
+    table{ width:100%; border-collapse:collapse; background:var(--panel); border-radius:12px; overflow:hidden; }
+    th,td{ padding:10px 12px; text-align:right; border-bottom:1px solid var(--line); }
+    th{ color:var(--muted); font-weight:600; font-size:12px; background:var(--panel2); }
+    tr:hover td{ background:#17171d; }
+    .btn{ background:var(--red); color:#fff; border:none; padding:8px 14px; border-radius:8px;
+          cursor:pointer; font-family:inherit; font-size:13px; }
+    .btn.ghost{ background:transparent; border:1px solid var(--line); color:var(--txt); }
+    .btn.green{ background:var(--green); }
+    .btn.small{ padding:5px 10px; font-size:12px; }
+    input,select,textarea{ background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+          padding:8px 10px; border-radius:8px; font-family:inherit; width:100%; }
+    label{ display:block; color:var(--muted); font-size:12px; margin:8px 0 4px; }
+    .row{ display:flex; gap:12px; flex-wrap:wrap; }
+    .row > *{ flex:1; min-width:120px; }
+    .pill{ padding:3px 9px; border-radius:20px; font-size:11px; }
+    .pill.ok{ background:rgba(37,194,110,.15); color:var(--green); }
+    .pill.warn{ background:rgba(242,176,30,.15); color:var(--amber); }
+    .pill.bad{ background:rgba(225,29,58,.15); color:var(--red2); }
+    .muted{ color:var(--muted); }
+    .inline{ display:inline; }
+    .toolbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+  </style>
+</head>
+<body>
+{% if request.session.get('auth') %}
+<div class="layout">
+  <aside class="side">
+    <div class="brand">⬢ AI TOKEN</div>
+    <nav class="nav">
+      <a href="/admin" class="{{ 'active' if active=='dashboard' }}">📊 داشبورد</a>
+      <a href="/admin/users" class="{{ 'active' if active=='users' }}">👥 کاربران</a>
+      <a href="/admin/receipts" class="{{ 'active' if active=='receipts' }}">🧾 رسیدها</a>
+      <a href="/admin/packages" class="{{ 'active' if active=='packages' }}">💳 پکیج‌ها</a>
+      <a href="/admin/modes" class="{{ 'active' if active=='modes' }}">🧠 موتورها</a>
+      <a href="/admin/conversations" class="{{ 'active' if active=='conversations' }}">💬 گفتگوها</a>
+      <a href="/admin/usage" class="{{ 'active' if active=='usage' }}">📈 مصرف</a>
+      <a href="/admin/payment-methods" class="{{ 'active' if active=='methods' }}">🏦 روش‌های پرداخت</a>
+      <a href="/admin/api-keys" class="{{ 'active' if active=='keys' }}">🔑 کلیدهای API</a>
+      <a href="/admin/settings" class="{{ 'active' if active=='settings' }}">⚙️ تنظیمات</a>
+      <a href="/admin/logout" class="muted">🚪 خروج</a>
+    </nav>
+  </aside>
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% else %}
+  {% block content_public %}{% endblock %}
+{% endif %}
+</body>
+</html>

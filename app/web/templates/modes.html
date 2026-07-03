@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>🧠 موتورهای هوش مصنوعی</h1>
+<p class="muted">مدل، ضریب سود و سقف خروجی هر موتور را اینجا تنظیم کنید. مدل پیش‌فرض فعلی mini است.</p>
+{% for m in modes %}
+<form method="post" action="/admin/modes/{{ m.id }}/update" class="card" style="margin-bottom:10px;">
+  <div style="font-weight:700;margin-bottom:8px;">{{ m.fa_name }} <span class="muted">({{ m.code }})</span></div>
+  <div class="row">
+    <div><label>مدل OpenAI</label><input name="model" value="{{ m.model }}"></div>
+    <div><label>reasoning_effort</label>
+      <select name="reasoning_effort">
+        {% for opt in ['', 'low', 'medium', 'high', 'xhigh'] %}
+        <option value="{{ opt }}" {{ 'selected' if (m.reasoning_effort or '')==opt }}>{{ opt or '—' }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label>هزینه پایه</label><input type="number" name="base_credit_cost" value="{{ m.base_credit_cost }}"></div>
+    <div><label>ضریب سود (۰=سراسری)</label><input type="number" step="0.1" name="markup_multiplier" value="{{ m.markup_multiplier or 0 }}"></div>
+    <div><label>حداکثر خروجی</label><input type="number" name="max_output_tokens" value="{{ m.max_output_tokens }}"></div>
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <div><label>تایید مصرف</label>
+      <select name="requires_confirmation"><option value="on" {{ 'selected' if m.requires_confirmation }}>بله</option>
+      <option value="off" {{ 'selected' if not m.requires_confirmation }}>خیر</option></select></div>
+    <div><label>فعال</label>
+      <select name="is_active"><option value="on" {{ 'selected' if m.is_active }}>بله</option>
+      <option value="off" {{ 'selected' if not m.is_active }}>خیر</option></select></div>
+    <div style="display:flex;align-items:flex-end;"><button class="btn ghost">ذخیره</button></div>
+  </div>
+</form>
+{% else %}<p class="muted">موتوری تعریف نشده.</p>{% endfor %}
+{% endblock %}

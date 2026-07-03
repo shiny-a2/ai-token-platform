@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>💳 پکیج‌ها</h1>
+<p class="muted">
+  «هزینه تمام‌شده» یعنی اگر کاربر همهٔ اعتبار پکیج را مصرف کند، تقریباً چقدر هزینهٔ واقعی OpenAI برای شما دارد
+  (با قیمت واحد {{ econ.token_unit_price_usd }}$ و ضریب سود {{ econ.global_markup_multiplier }}).
+</p>
+
+<h2>پکیج جدید</h2>
+<form method="post" action="/admin/packages/create" class="card">
+  <div class="row">
+    <div><label>نام</label><input name="name" required></div>
+    <div><label>قیمت (تومان)</label><input type="number" name="price_toman" value="0" placeholder="مثلاً 500000"></div>
+    <div><label>قیمت ($) برای حسابداری</label><input type="number" step="0.01" name="price_usd" required></div>
+    <div><label>اعتبار (AI Token)</label><input type="number" name="ai_tokens" required></div>
+    <div><label>اعتبار (روز)</label><input type="number" name="validity_days" value="30"></div>
+    <div style="display:flex;align-items:flex-end;"><button class="btn">افزودن</button></div>
+  </div>
+</form>
+
+<h2>پکیج‌های موجود</h2>
+{% for p in packages %}
+{% set c = costs.get(p.id) %}
+<form method="post" action="/admin/packages/{{ p.id }}/update" class="card" style="margin-bottom:10px;">
+  <div class="row">
+    <div><label>نام</label><input name="name" value="{{ p.name }}"></div>
+    <div><label>قیمت (تومان)</label><input type="number" name="price_toman" value="{{ p.price_toman or 0 }}"></div>
+    <div><label>قیمت ($)</label><input type="number" step="0.01" name="price_usd" value="{{ p.price_usd }}"></div>
+    <div><label>اعتبار</label><input type="number" name="ai_tokens" value="{{ p.ai_tokens }}"></div>
+    <div><label>روز</label><input type="number" name="validity_days" value="{{ p.validity_days }}"></div>
+    <div><label>فعال</label>
+      <select name="is_active"><option value="on" {{ 'selected' if p.is_active }}>بله</option>
+      <option value="off" {{ 'selected' if not p.is_active }}>خیر</option></select></div>
+    <div style="display:flex;align-items:flex-end;"><button class="btn ghost">ذخیره</button></div>
+  </div>
+  {% if c %}
+  <div style="margin-top:8px;font-size:12px;">
+    هزینه تمام‌شده تقریبی: <b>${{ c.cost }}</b>
+    · حاشیه سود: <b style="color:{{ 'var(--green)' if c.margin >= 0 else 'var(--red2)' }}">${{ c.margin }} ({{ c.pct }}٪)</b>
+    {% if p.price_toman %}<span class="muted"> · نمایش به کاربر: {{ '{:,}'.format(p.price_toman) }} تومان</span>{% endif %}
+  </div>
+  {% endif %}
+</form>
+{% else %}<p class="muted">پکیجی نیست.</p>{% endfor %}
+{% endblock %}

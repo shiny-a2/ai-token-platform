@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>🏦 روش‌های پرداخت</h1>
+<p class="muted">اطلاعات کارت/شبا/کیف‌پول رمزنگاری‌شده ذخیره می‌شوند و هرگز در سورس یا گیت‌هاب قرار نمی‌گیرند.</p>
+
+<h2>افزودن روش</h2>
+<form method="post" action="/admin/payment-methods/create" class="card">
+  <div class="row">
+    <div><label>نوع</label>
+      <select name="type">
+        <option value="card">کارت</option><option value="sheba">شبا</option>
+        <option value="usdt_trc20">USDT TRC20</option><option value="usdt_bnb">USDT BEP20</option>
+        <option value="btc">BTC</option><option value="eth">ETH</option><option value="bnb">BNB</option>
+      </select></div>
+    <div><label>عنوان نمایشی</label><input name="display_name" placeholder="مثلاً کارت بانک ملت" required></div>
+    <div><label>شبکه (اختیاری)</label><input name="network" placeholder="TRC20"></div>
+    <div><label>مقدار (شماره کارت/آدرس)</label><input name="value" required></div>
+    <div style="display:flex;align-items:flex-end;"><button class="btn">افزودن</button></div>
+  </div>
+</form>
+
+<h2>روش‌های موجود</h2>
+<table>
+  <tr><th>عنوان</th><th>نوع</th><th>شبکه</th><th>مقدار</th><th>وضعیت</th><th></th></tr>
+  {% for row in methods %}
+  {% set m = row.m %}
+  <tr>
+    <td>{{ m.display_name }}</td>
+    <td class="muted">{{ m.type }}</td>
+    <td class="muted">{{ m.network or '—' }}</td>
+    <td style="direction:ltr;text-align:left;">{{ row.value }}</td>
+    <td>{% if m.is_active %}<span class="pill ok">فعال</span>{% else %}<span class="pill bad">غیرفعال</span>{% endif %}</td>
+    <td><form class="inline" method="post" action="/admin/payment-methods/{{ m.id }}/toggle">
+      <button class="btn ghost small">{{ 'غیرفعال' if m.is_active else 'فعال' }}</button></form></td>
+  </tr>
+  {% else %}<tr><td colspan="6" class="muted">روشی ثبت نشده.</td></tr>{% endfor %}
+</table>
+{% endblock %}

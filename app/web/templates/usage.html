@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>📈 لاگ مصرف</h1>
+<table>
+  <tr><th>تاریخ</th><th>کاربر</th><th>موتور</th><th>مدل</th><th>ورودی</th><th>خروجی</th><th>reasoning</th><th>هزینه ($)</th><th>اعتبار</th><th>وضعیت</th></tr>
+  {% for l in logs %}
+  {% set u = users.get(l.user_id) %}
+  <tr>
+    <td class="muted">{{ l.created_at.strftime('%m-%d %H:%M') }}</td>
+    <td>{{ u.first_name if u else (l.user_id[:6]) }}</td>
+    <td>{{ l.mode }}</td>
+    <td class="muted">{{ l.model }}</td>
+    <td>{{ l.input_tokens }}</td>
+    <td>{{ l.output_tokens }}</td>
+    <td>{{ l.reasoning_tokens }}</td>
+    <td class="muted">${{ '%.5f'|format(l.api_cost_usd) }}</td>
+    <td>{{ l.charged_ai_tokens }}</td>
+    <td>{% if l.status=='ok' %}<span class="pill ok">ok</span>{% else %}<span class="pill bad">{{ l.error_code or l.status }}</span>{% endif %}</td>
+  </tr>
+  {% else %}<tr><td colspan="10" class="muted">مصرفی ثبت نشده.</td></tr>{% endfor %}
+</table>
+{% endblock %}

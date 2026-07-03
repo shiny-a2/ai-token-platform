@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>👥 کاربران</h1>
+<table>
+  <tr><th>نام</th><th>یوزرنیم</th><th>Telegram ID</th><th>نقش</th><th>باقی‌مانده</th><th>انقضا</th><th></th></tr>
+  {% for u in users %}
+  {% set b = balances.get(u.id) %}
+  <tr>
+    <td>{{ u.first_name or '—' }}</td>
+    <td class="muted">{% if u.username %}@{{ u.username }}{% else %}—{% endif %}</td>
+    <td class="muted">{{ u.telegram_user_id }}</td>
+    <td>{% if u.role=='admin' %}<span class="pill bad">ادمین</span>{% else %}<span class="pill ok">کاربر</span>{% endif %}</td>
+    <td>{{ b.remaining if b else 0 }}</td>
+    <td class="muted">{{ b.expires_at.strftime('%Y-%m-%d') if b and b.expires_at else '—' }}</td>
+    <td><a class="btn ghost small" href="/admin/users/{{ u.id }}">جزئیات</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">کاربری ثبت نشده است.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

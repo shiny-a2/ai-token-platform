@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>🧾 رسیدهای پرداخت</h1>
+<table>
+  <tr><th>تاریخ</th><th>کاربر</th><th>پکیج</th><th>مبلغ</th><th>روش</th><th>TxID</th><th>وضعیت</th><th>عملیات</th></tr>
+  {% for r in receipts %}
+  {% set u = users.get(r.user_id) %}
+  {% set p = packages.get(r.package_id) %}
+  <tr>
+    <td class="muted">{{ r.created_at.strftime('%m-%d %H:%M') }}</td>
+    <td>{{ u.first_name if u else '—' }}<div class="muted">{{ u.telegram_user_id if u else '' }}</div></td>
+    <td>{{ p.name if p else '—' }}</td>
+    <td>{% if r.amount_usd %}${{ r.amount_usd }}{% else %}—{% endif %}</td>
+    <td class="muted">{{ r.method or '—' }}</td>
+    <td class="muted">{{ (r.txid[:18] ~ '…') if r.txid else '—' }}</td>
+    <td>
+      {% if r.status=='pending' %}<span class="pill warn">در انتظار</span>
+      {% elif r.status=='approved' %}<span class="pill ok">تایید</span>
+      {% else %}<span class="pill bad">رد</span>{% endif %}
+    </td>
+    <td>
+      {% if r.status=='pending' %}
+      <form class="inline" method="post" action="/admin/receipts/{{ r.id }}/approve">
+        <button class="btn green small">تایید</button></form>
+      <form class="inline" method="post" action="/admin/receipts/{{ r.id }}/reject">
+        <button class="btn small">رد</button></form>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="8" class="muted">رسیدی ثبت نشده است.</td></tr>{% endfor %}
+</table>
+{% endblock %}

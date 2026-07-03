@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>⚙️ تنظیمات اقتصادی</h1>
+<form method="post" action="/admin/settings" class="card">
+  <div class="row">
+    <div><label>قیمت واحد هر اعتبار ($)</label>
+      <input name="token_unit_price_usd" value="{{ vals.get('token_unit_price_usd','0.0005') }}"></div>
+    <div><label>ضریب سود سراسری</label>
+      <input name="global_markup_multiplier" value="{{ vals.get('global_markup_multiplier','1.8') }}"></div>
+  </div>
+  <div class="row">
+    <div><label>حداقل کسر هر درخواست</label>
+      <input name="min_charge_per_request" value="{{ vals.get('min_charge_per_request','1') }}"></div>
+    <div><label>حداکثر کسر هر درخواست</label>
+      <input name="max_charge_per_request" value="{{ vals.get('max_charge_per_request','100000') }}"></div>
+  </div>
+  <div class="row">
+    <div><label>آیدی پشتیبانی</label>
+      <input name="support_contact" value="{{ vals.get('support_contact','@admin') }}"></div>
+  </div>
+  <button class="btn" style="margin-top:14px;">ذخیره</button>
+</form>
+<p class="muted" style="margin-top:12px;">فرمول: اعتبار کسرشده = پایه + سقفِ(هزینه واقعی API × ضریب سود ÷ قیمت واحد).</p>
+{% endblock %}

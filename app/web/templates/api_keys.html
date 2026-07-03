@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>🔑 کلیدهای OpenAI</h1>
+<p class="muted">کلیدها رمزنگاری‌شده ذخیره می‌شوند. در صورت خطای سهمیه/محدودیت، کلید بعدی به‌ترتیب اولویت امتحان می‌شود.</p>
+
+<div class="card" style="margin-bottom:14px;">
+  کلید محیطی (.env): <span style="direction:ltr;">{{ env_key_masked or '— تنظیم نشده —' }}</span>
+  <span class="muted">— به‌عنوان آخرین جایگزین استفاده می‌شود.</span>
+</div>
+
+<h2>افزودن کلید یدک</h2>
+<form method="post" action="/admin/api-keys/create" class="card">
+  <div class="row">
+    <div><label>نام</label><input name="name" placeholder="backup-1" required></div>
+    <div><label>کلید API</label><input name="api_key" placeholder="sk-..." required></div>
+    <div><label>اولویت (کمتر = زودتر)</label><input type="number" name="priority" value="100"></div>
+    <div style="display:flex;align-items:flex-end;"><button class="btn">افزودن</button></div>
+  </div>
+</form>
+
+<h2>کلیدهای ثبت‌شده</h2>
+<table>
+  <tr><th>نام</th><th>کلید</th><th>اولویت</th><th>آخرین استفاده</th><th>وضعیت</th><th></th></tr>
+  {% for row in keys %}
+  {% set k = row.k %}
+  <tr>
+    <td>{{ k.name }}</td>
+    <td style="direction:ltr;text-align:left;">{{ row.masked }}</td>
+    <td>{{ k.priority }}</td>
+    <td class="muted">{{ k.last_used_at.strftime('%Y-%m-%d %H:%M') if k.last_used_at else '—' }}</td>
+    <td>{% if k.is_active %}<span class="pill ok">فعال</span>{% else %}<span class="pill bad">غیرفعال</span>{% endif %}
+        {% if k.status and k.status!='ok' %}<span class="pill warn">{{ k.status }}</span>{% endif %}</td>
+    <td><form class="inline" method="post" action="/admin/api-keys/{{ k.id }}/toggle">
+      <button class="btn ghost small">{{ 'غیرفعال' if k.is_active else 'فعال' }}</button></form></td>
+  </tr>
+  {% else %}<tr><td colspan="6" class="muted">کلید یدکی ثبت نشده.</td></tr>{% endfor %}
+</table>
+{% endblock %}

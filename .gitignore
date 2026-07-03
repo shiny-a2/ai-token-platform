@@ -1,0 +1,34 @@
+# ---- secrets & runtime data (never commit) ----
+.env
+.env.*
+!.env.example
+secrets.json
+private_settings.json
+
+# ---- storage / db / backups ----
+storage/
+uploads/
+backups/
+data/
+*.sqlite
+*.sqlite3
+*.db
+
+# ---- local binaries (cloudflared etc.) ----
+tools/
+
+# ---- python ----
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ---- editor / os ----
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

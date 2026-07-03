@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>💬 گفتگوها</h1>
+<p class="muted">دسترسی ادمین به گفتگوها ثبت (audit) می‌شود.</p>
+<table>
+  <tr><th>عنوان</th><th>کاربر</th><th>موتور</th><th>به‌روزرسانی</th><th></th></tr>
+  {% for c in conversations %}
+  {% set u = users.get(c.user_id) %}
+  <tr>
+    <td>{{ c.title or '—' }}</td>
+    <td>{{ u.first_name if u else '—' }}<div class="muted">{{ u.telegram_user_id if u else '' }}</div></td>
+    <td class="muted">{{ c.current_mode }}</td>
+    <td class="muted">{{ c.updated_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    <td><a class="btn ghost small" href="/admin/conversations/{{ c.id }}">مشاهده</a></td>
+  </tr>
+  {% else %}<tr><td colspan="5" class="muted">گفتگویی نیست.</td></tr>{% endfor %}
+</table>
+{% endblock %}
