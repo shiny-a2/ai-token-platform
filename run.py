@@ -30,6 +30,60 @@ def _bot_token_ready() -> bool:
     return bool(tok) and ":" in tok and "FAKE" not in tok
 
 
+async def _menu_url_sync(bot) -> None:
+    """Keep the mini-app menu button pointed at the FASTEST healthy URL.
+
+    Preference: the Cloudflare quick tunnel (edge network — much faster for
+    users on throttled international routes) when its service is up; falls
+    back to the stable PUBLIC_URL otherwise. The tunnel URL changes on every
+    tunnel restart, so we re-read it from the tunnel service log and verify
+    it end-to-end before switching.
+    """
+    import re
+    from pathlib import Path
+
+    import httpx
+    from aiogram.types import MenuButtonWebApp, WebAppInfo
+
+    tunnel_log = Path("data/svclogs/AITokenPlatform-Tunnel.err.log")
+    current: str | None = None
+
+    async def probe(base: str) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=8, verify=True) as client:
+                r = await client.get(f"{base}/health")
+                return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
+    async def set_menu(base: str) -> None:
+        nonlocal current
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="منو", web_app=WebAppInfo(url=f"{base}/app"))
+        )
+        current = base
+        log.info("menu button -> %s/app", base)
+
+    while True:
+        try:
+            candidate = None
+            if tunnel_log.exists():
+                tail = tunnel_log.read_text(encoding="utf-8", errors="ignore")[-30000:]
+                urls = re.findall(r"https://[a-z0-9-]+\.trycloudflare\.com", tail)
+                if urls:
+                    candidate = urls[-1]
+            if candidate and candidate != current and await probe(candidate):
+                await set_menu(candidate)
+            elif candidate is None or (candidate == current and not await probe(candidate)):
+                # tunnel gone/dead -> fall back to the stable address
+                stable = settings.public_url.rstrip("/")
+                if stable.startswith("https://") and current != stable and await probe(stable):
+                    await set_menu(stable)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("menu sync: %s", exc)
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app):
     await init_db()
@@ -48,6 +102,7 @@ async def lifespan(app):
         polling_task = asyncio.create_task(
             dp.start_polling(bot, handle_signals=False)
         )
+        app.state.menu_sync_task = asyncio.create_task(_menu_url_sync(bot))
     else:
         app.state.bot = None
         log.warning(
@@ -61,6 +116,9 @@ async def lifespan(app):
     try:
         yield
     finally:
+        sync_task = getattr(app.state, "menu_sync_task", None)
+        if sync_task:
+            sync_task.cancel()
         if polling_task:
             polling_task.cancel()
             try:
