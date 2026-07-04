@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>AI Token</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- served locally: telegram.org is slow/blocked for many users -->
+<script src="/static/telegram-web-app.js"></script>
 <style>
 :root{--bg:#0a0a0c;--panel:#141418;--panel2:#1c1c22;--line:#2a2a33;--txt:#e8e8ee;
 --muted:#8b8b96;--red:#e11d3a;--red2:#ff415e;--green:#25c26e;--amber:#f2b01e;}
@@ -75,7 +76,13 @@ th{color:var(--muted);font-weight:600;font-size:11px;}
 </head>
 <body>
 <div id="toast"></div>
-<div id="view"></div>
+<div id="view">
+  <!-- instant skeleton: paints before any network round-trip -->
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:70vh;gap:14px;">
+    <div class="spin" style="width:26px;height:26px;border-width:3px;"></div>
+    <div class="muted">در حال اتصال…</div>
+  </div>
+</div>
 <div id="nav"></div>
 <div id="overlay"><div id="sheet"></div></div>
 

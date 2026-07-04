@@ -78,11 +78,28 @@ def create_app(lifespan=None) -> FastAPI:
     async def health():
         return JSONResponse({"status": "ok"})
 
+    # Mini App HTML is cached in memory at startup — zero disk I/O per hit.
+    miniapp_html = {"body": ""}
+
     @app.get("/app", response_class=HTMLResponse, include_in_schema=False)
     async def miniapp():
         # Served raw (not via Jinja) so JS braces are never mangled.
-        html = (TEMPLATES_DIR / "webapp.html").read_text(encoding="utf-8")
-        return HTMLResponse(html)
+        if not miniapp_html["body"]:
+            miniapp_html["body"] = (TEMPLATES_DIR / "webapp.html").read_text(
+                encoding="utf-8"
+            )
+        return HTMLResponse(
+            miniapp_html["body"],
+            headers={"Cache-Control": "no-cache"},  # revalidate, don't refetch blindly
+        )
+
+    @app.middleware("http")
+    async def _static_cache_headers(request: Request, call_next):
+        response = await call_next(request)
+        # static assets (telegram SDK etc.) are safe to cache for a day
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "public, max-age=86400"
+        return response
 
     # ---------------- auth ----------------
     @app.get("/admin/login", response_class=HTMLResponse)

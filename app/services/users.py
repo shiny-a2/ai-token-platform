@@ -44,12 +44,22 @@ async def get_or_create(
             user.username, changed = username, True
         if first_name and user.first_name != first_name:
             user.first_name, changed = first_name, True
-        user.last_seen_at = utcnow()
         if settings.is_admin(tg_id) and user.role != "admin":
             user.role, changed = "admin", True
-        await db.commit()
-        if changed:
-            await db.refresh(user)
+        # throttle the last_seen write: one DB commit per 5 minutes per user,
+        # not one per API call (this is on the hot path of every request)
+        now = utcnow()
+        last = user.last_seen_at
+        if last is not None and last.tzinfo is None:
+            from datetime import timezone as _tz
+
+            last = last.replace(tzinfo=_tz.utc)
+        stale = last is None or (now - last).total_seconds() > 300
+        if changed or stale:
+            user.last_seen_at = now
+            await db.commit()
+            if changed:
+                await db.refresh(user)
     return user
 
 
